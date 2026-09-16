@@ -63,22 +63,22 @@
             <polyline points="6 9 12 15 18 9"></polyline>
           </svg>
         </div>
-        <div class="status-pill" id="pill-router" title="Primary Gateway Router">
+        <div class="status-pill status-pill-interactive" id="pill-router" title="Primary Gateway Router. Click to inspect router settings.">
           <span class="pill-dot green"></span>
           <span class="pill-label">Router:</span>
           <span class="pill-val" id="val-router">Archer BE550 v2</span>
         </div>
-        <div class="status-pill" id="pill-isp" title="Broadband ISP & Upstream Network">
+        <div class="status-pill status-pill-interactive" id="pill-isp" title="Broadband ISP & Upstream Network. Click to inspect diagnostics.">
           <span class="pill-dot blue"></span>
           <span class="pill-label">ISP:</span>
           <span class="pill-val" id="val-isp">Aussie Broadband</span>
         </div>
-        <div class="status-pill" id="pill-cgnat" title="Carrier-Grade NAT Status">
+        <div class="status-pill status-pill-interactive" id="pill-cgnat" title="Carrier-Grade NAT Status. Click to inspect route trace & CGNAT.">
           <span class="pill-dot amber"></span>
           <span class="pill-label">NAT:</span>
           <span class="pill-val" id="val-cgnat">CGNAT Active</span>
         </div>
-        <div class="status-pill" id="pill-ai" title="AI Advisor Engine">
+        <div class="status-pill status-pill-interactive" id="pill-ai" title="AI Advisor Engine. Click to configure provider & models.">
           <span class="pill-dot purple"></span>
           <span class="pill-label">AI:</span>
           <span class="pill-val" id="val-ai">Mistral AI</span>
@@ -86,7 +86,7 @@
       </div>
 
       <div class="header-right">
-        <button id="btn-rescan" class="btn btn-secondary">
+        <button id="btn-rescan" class="btn btn-secondary" title="Shortcut: Press 'R'">
           <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
             <path d="M21.5 2v6h-6M2.5 22v-6h6M2 11.5a10 10 0 0 1 18.8-4.3M22 12.5a10 10 0 0 1-18.8 4.2"/>
           </svg>
@@ -112,6 +112,7 @@
             <path d="M5 8v3a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8m-7 5v3"></path>
           </svg>
           Topology Map
+          <kbd class="kbd-hint">1</kbd>
         </button>
         <button class="nav-tab" data-tab="suggestions">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -119,6 +120,7 @@
           </svg>
           Network Suggestions
           <span class="tab-badge" id="sug-badge">0</span>
+          <kbd class="kbd-hint">2</kbd>
         </button>
         <button class="nav-tab" data-tab="solver">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -126,6 +128,7 @@
           </svg>
           Agent Studio & Solver
           <span class="tab-badge" id="advisor-badge">Agents Ready</span>
+          <kbd class="kbd-hint">3</kbd>
         </button>
         <button class="nav-tab" data-tab="docs">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -133,6 +136,7 @@
             <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"></path>
           </svg>
           AI Documentation
+          <kbd class="kbd-hint">4</kbd>
         </button>
         <button class="nav-tab" data-tab="router-settings">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -142,6 +146,7 @@
             <line x1="6" y1="18" x2="6.01" y2="18"></line>
           </svg>
           Router & Modem Settings
+          <kbd class="kbd-hint">5</kbd>
         </button>
         <button class="nav-tab" data-tab="devices">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -150,12 +155,14 @@
             <line x1="12" y1="17" x2="12" y2="21"></line>
           </svg>
           Device Inventory (<span id="device-count">0</span>)
+          <kbd class="kbd-hint">6</kbd>
         </button>
         <button class="nav-tab" data-tab="diagnostics">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
             <polyline points="22 12 18 12 15 21 9 3 6 12 2 12"></polyline>
           </svg>
           Diagnostics & Route Trace
+          <kbd class="kbd-hint">7</kbd>
         </button>
       </div>
       <div class="nav-right-meta">
@@ -192,7 +199,10 @@
       <section class="tab-content active" id="tab-topology">
         <div class="topology-wrapper">
           <div class="topology-toolbar">
-            <span class="tool-hint">Click any node to inspect details, customize device fields/roles for AI context, view camera RTSP streams, or test latency.</span>
+            <span class="tool-hint">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:14px;height:14px;color:var(--accent-cyan);"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="16" x2="12" y2="12"></line><line x1="12" y1="8" x2="12.01" y2="8"></line></svg>
+              Click any node to inspect details, customize device fields/roles for AI context, view camera RTSP streams, or test latency.
+            </span>
             
             <div class="topo-zoom-controls">
               <button id="btn-zoom-in" class="btn-tool-sm" title="Zoom In">+</button>
@@ -213,6 +223,7 @@
           </div>
           <div class="canvas-container" id="canvas-container">
             <svg id="topo-svg" width="100%" height="100%"></svg>
+            <div id="topo-hud" class="topo-hud" style="display:none;"></div>
           </div>
         </div>
       </section>
@@ -462,7 +473,9 @@
                 <circle cx="11" cy="11" r="8"></circle>
                 <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
               </svg>
-              <input type="text" id="device-search-input" placeholder="Search devices by alias, IP, MAC, role, location, custom fields..." />
+              <input type="text" id="device-search-input" placeholder="Search devices by alias, IP, MAC, role, location, custom fields... (Shortcut: '/')" />
+              <button id="btn-clear-search" class="btn-clear-search" style="display:none;" title="Clear Search">&times;</button>
+              <kbd class="kbd-hint">/</kbd>
             </div>
             <div class="device-filters" id="device-filter-bar">
               <button class="filter-chip active" data-dev-filter="all">All (<span id="count-all">0</span>)</button>

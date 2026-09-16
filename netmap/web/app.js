@@ -206,15 +206,104 @@ function updateEngineBadge() {
 }
 
 // -------------------------------------------------------------
-// Rescan
+// Navigation Tabs & Keyboard Shortcuts
+// -------------------------------------------------------------
+function initNav() {
+  document.querySelectorAll('.nav-tab').forEach(tab => {
+    tab.addEventListener('click', () => {
+      document.querySelectorAll('.nav-tab').forEach(t => t.classList.remove('active'));
+      document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+
+      tab.classList.add('active');
+      const target = tab.getAttribute('data-tab');
+      state.activeTab = target;
+      const el = document.getElementById(`tab-${target}`);
+      if (el) el.classList.add('active');
+
+      if (target === 'topology' && state.topology) {
+        renderTopology(state.topology);
+      } else if (target === 'suggestions' && state.topology) {
+        renderSuggestions(state.topology.suggestions || []);
+      } else if (target === 'docs') {
+        loadDocumentationIndex();
+      } else if (target === 'router-settings' && state.topology) {
+        renderRouterSettings(state.topology.router_settings);
+      } else if (target === 'devices' && state.topology) {
+        renderDeviceTable(state.topology.devices || []);
+      }
+    });
+  });
+
+  document.getElementById('btn-rescan')?.addEventListener('click', triggerRescan);
+
+  // Status pills quick navigation
+  document.getElementById('pill-router')?.addEventListener('click', () => {
+    document.querySelector('.nav-tab[data-tab="router-settings"]')?.click();
+  });
+  document.getElementById('pill-isp')?.addEventListener('click', () => {
+    document.querySelector('.nav-tab[data-tab="diagnostics"]')?.click();
+  });
+  document.getElementById('pill-cgnat')?.addEventListener('click', () => {
+    document.querySelector('.nav-tab[data-tab="diagnostics"]')?.click();
+  });
+  document.getElementById('pill-ai')?.addEventListener('click', () => {
+    document.getElementById('modal-settings')?.classList.add('active');
+  });
+
+  // Global Keyboard Shortcuts
+  window.addEventListener('keydown', (e) => {
+    if (['INPUT', 'TEXTAREA', 'SELECT'].includes(document.activeElement?.tagName)) {
+      if (e.key === 'Escape') {
+        document.activeElement.blur();
+        closeInspector();
+        document.getElementById('modal-settings')?.classList.remove('active');
+        document.getElementById('profiles-modal')?.classList.remove('active');
+        const hud = document.getElementById('topo-hud');
+        if (hud) hud.style.display = 'none';
+      }
+      return;
+    }
+
+    if (e.key >= '1' && e.key <= '7') {
+      const tabNames = ['topology', 'suggestions', 'solver', 'docs', 'router-settings', 'devices', 'diagnostics'];
+      const targetTab = tabNames[parseInt(e.key) - 1];
+      if (targetTab) {
+        const tabBtn = document.querySelector(`.nav-tab[data-tab="${targetTab}"]`);
+        tabBtn?.click();
+      }
+    } else if (e.key === '/' || e.key === 's') {
+      e.preventDefault();
+      const tabBtn = document.querySelector('.nav-tab[data-tab="devices"]');
+      tabBtn?.click();
+      setTimeout(() => {
+        const searchInput = document.getElementById('device-search-input');
+        searchInput?.focus();
+        searchInput?.select();
+      }, 50);
+    } else if (e.key === 'r' || e.key === 'R') {
+      triggerRescan();
+    } else if (e.key === 'Escape') {
+      closeInspector();
+      document.getElementById('modal-settings')?.classList.remove('active');
+      document.getElementById('profiles-modal')?.classList.remove('active');
+      const hud = document.getElementById('topo-hud');
+      if (hud) hud.style.display = 'none';
+    }
+  });
+}
+
+// -------------------------------------------------------------
+// Rescan Subnet & Fingerprint Devices
 // -------------------------------------------------------------
 async function triggerRescan() {
   if (state.isScanning) return;
   state.isScanning = true;
   const btn = document.getElementById('btn-rescan');
   const text = document.getElementById('rescan-text');
-  btn.disabled = true;
-  text.textContent = "Scanning Subnet...";
+  const icon = btn?.querySelector('svg');
+  if (btn) btn.disabled = true;
+  if (icon) icon.classList.add('spinning');
+  if (text) text.textContent = "Scanning Subnet...";
   updateStatus("Scanning subnet, fingerprinting cameras/NVRs, and evaluating network suggestions...");
   showToast("Network scan started in background", "info");
 
@@ -226,8 +315,9 @@ async function triggerRescan() {
       if (!data.scanning) {
         clearInterval(checkInterval);
         state.isScanning = false;
-        btn.disabled = false;
-        text.textContent = "Rescan Network";
+        if (btn) btn.disabled = false;
+        if (icon) icon.classList.remove('spinning');
+        if (text) text.textContent = "Rescan Network";
         state.topology = data.topology;
         updateUIWithTopology(state.topology);
         showToast("Network scan completed successfully", "success");
@@ -236,8 +326,9 @@ async function triggerRescan() {
   } catch (err) {
     console.error("Rescan failed:", err);
     state.isScanning = false;
-    btn.disabled = false;
-    text.textContent = "Rescan Network";
+    if (btn) btn.disabled = false;
+    if (icon) icon.classList.remove('spinning');
+    if (text) text.textContent = "Rescan Network";
     showToast("Rescan failed", "error");
   }
 }
@@ -409,17 +500,166 @@ function exportTopologySvg() {
   showToast("Topology SVG exported successfully", "success");
 }
 
+let hudTimeout = null;
+
+function getNodeIconSvg(category, r) {
+  const s = r * 0.95;
+  const h = s / 2;
+  switch (category) {
+    case 'router':
+      return `
+        <path d="M ${-h*0.6} ${-h*0.4} L ${-h*0.3} ${h*0.2} M ${h*0.6} ${-h*0.4} L ${h*0.3} ${h*0.2}" stroke="#7dcfff" stroke-width="2" stroke-linecap="round"/>
+        <rect x="${-h*0.8}" y="${h*0.1}" width="${h*1.6}" height="${h*0.8}" rx="2" fill="#131d2e" stroke="#7dcfff" stroke-width="1.8"/>
+        <circle cx="${-h*0.4}" cy="${h*0.5}" r="1.5" fill="#10b981"/>
+        <circle cx="0" cy="${h*0.5}" r="1.5" fill="#7dcfff"/>
+        <circle cx="${h*0.4}" cy="${h*0.5}" r="1.5" fill="#7dcfff"/>
+        <path d="M ${-h*0.7} ${-h*0.7} A ${h} ${h} 0 0 1 ${h*0.7} ${-h*0.7}" fill="none" stroke="rgba(125,207,255,0.6)" stroke-width="1.5" stroke-linecap="round"/>
+      `;
+    case 'modem':
+      return `
+        <rect x="${-h*0.7}" y="${-h*0.7}" width="${h*1.4}" height="${h*1.4}" rx="3" fill="#181528" stroke="#bb9af7" stroke-width="1.8"/>
+        <line x1="${-h*0.4}" y1="${-h*0.2}" x2="${h*0.4}" y2="${-h*0.2}" stroke="#bb9af7" stroke-width="1.5"/>
+        <circle cx="${-h*0.35}" cy="${h*0.3}" r="1.5" fill="#10b981"/>
+        <circle cx="0" cy="${h*0.3}" r="1.5" fill="#10b981"/>
+        <circle cx="${h*0.35}" cy="${h*0.3}" r="1.5" fill="#7dcfff"/>
+      `;
+    case 'internet':
+      return `
+        <circle cx="0" cy="0" r="${h*0.75}" fill="none" stroke="#bb9af7" stroke-width="1.8"/>
+        <ellipse cx="0" cy="0" rx="${h*0.35}" ry="${h*0.75}" fill="none" stroke="#bb9af7" stroke-width="1.2"/>
+        <line x1="${-h*0.75}" y1="0" x2="${h*0.75}" y2="0" stroke="#bb9af7" stroke-width="1.2"/>
+      `;
+    case 'extender':
+      return `
+        <rect x="${-h*0.6}" y="${-h*0.3}" width="${h*1.2}" height="${h*1.0}" rx="2" fill="#141a2e" stroke="#7aa2f7" stroke-width="1.8"/>
+        <path d="M ${-h*0.8} ${-h*0.6} A ${h*0.8} ${h*0.8} 0 0 1 ${h*0.8} ${-h*0.6}" fill="none" stroke="#7aa2f7" stroke-width="1.5" stroke-linecap="round"/>
+        <circle cx="0" cy="${h*0.2}" r="2" fill="#10b981"/>
+      `;
+    case 'host':
+    case 'pc':
+      return `
+        <rect x="${-h*0.75}" y="${-h*0.7}" width="${h*1.5}" height="${h*1.0}" rx="2" fill="#14221b" stroke="#9ece6a" stroke-width="1.8"/>
+        <line x1="${-h*0.3}" y1="${h*0.3}" x2="${h*0.3}" y2="${h*0.3}" stroke="#9ece6a" stroke-width="2"/>
+        <line x1="0" y1="${h*0.3}" x2="0" y2="${h*0.6}" stroke="#9ece6a" stroke-width="2"/>
+        <line x1="${-h*0.4}" y1="${h*0.6}" x2="${h*0.4}" y2="${h*0.6}" stroke="#9ece6a" stroke-width="2" stroke-linecap="round"/>
+        <path d="M ${-h*0.45} ${-h*0.25} L ${-h*0.2} ${-h*0.1} L ${-h*0.45} ${h*0.05}" fill="none" stroke="#9ece6a" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+        <line x1="${-h*0.05}" y1="${h*0.05}" x2="${h*0.35}" y2="${h*0.05}" stroke="#9ece6a" stroke-width="1.5"/>
+      `;
+    case 'camera':
+      return `
+        <path d="M ${-h*0.6} ${-h*0.4} L ${h*0.3} ${-h*0.4} L ${h*0.6} ${-h*0.6} L ${h*0.6} ${h*0.4} L ${h*0.3} ${h*0.2} L ${-h*0.6} ${h*0.2} Z" fill="#241e13" stroke="#f59e0b" stroke-width="1.8" stroke-linejoin="round"/>
+        <circle cx="${-h*0.15}" cy="${-h*0.1}" r="${h*0.25}" fill="#f59e0b"/>
+        <circle cx="${-h*0.15}" cy="${-h*0.1}" r="${h*0.12}" fill="#0c0e14"/>
+        <line x1="${-h*0.6}" y1="${h*0.2}" x2="${-h*0.6}" y2="${h*0.6}" stroke="#f59e0b" stroke-width="2"/>
+      `;
+    case 'nvr':
+      return `
+        <rect x="${-h*0.8}" y="${-h*0.5}" width="${h*1.6}" height="${h*1.1}" rx="2" fill="#261220" stroke="#ec4899" stroke-width="1.8"/>
+        <rect x="${-h*0.6}" y="${-h*0.3}" width="${h*0.5}" height="${h*0.7}" rx="1" fill="none" stroke="#ec4899" stroke-width="1.2"/>
+        <rect x="0" y="${-h*0.3}" width="${h*0.5}" height="${h*0.7}" rx="1" fill="none" stroke="#ec4899" stroke-width="1.2"/>
+        <circle cx="${h*0.6}" cy="${-h*0.2}" r="1.5" fill="#10b981"/>
+        <circle cx="${h*0.6}" cy="${-h*0.2}" r="1.5" fill="#ec4899"/>
+      `;
+    case 'smart_tv':
+      return `
+        <rect x="${-h*0.85}" y="${-h*0.6}" width="${h*1.7}" height="${h*1.05}" rx="2" fill="#261d12" stroke="#e0af68" stroke-width="1.8"/>
+        <line x1="0" y1="${h*0.45}" x2="0" y2="${h*0.7}" stroke="#e0af68" stroke-width="2"/>
+        <line x1="${-h*0.4}" y1="${h*0.7}" x2="${h*0.4}" y2="${h*0.7}" stroke="#e0af68" stroke-width="2" stroke-linecap="round"/>
+        <circle cx="${h*0.65}" cy="${h*0.3}" r="1.2" fill="#e0af68"/>
+      `;
+    default:
+      return `
+        <circle cx="0" cy="0" r="${h*0.6}" fill="#161e2e" stroke="#7dcfff" stroke-width="1.6"/>
+        <circle cx="0" cy="0" r="${h*0.25}" fill="#7dcfff"/>
+      `;
+  }
+}
+
+function showNodeHud(node, event) {
+  clearTimeout(hudTimeout);
+  const hud = document.getElementById('topo-hud');
+  if (!hud) return;
+  const dev = node.data || {};
+  const cat = dev.category || 'unknown';
+  const ports = (dev.open_ports || []).map(p => {
+    const isCam = [554, 8554, 8000, 37777].includes(p);
+    return `<span class="port-tag ${isCam ? 'cam' : ''}">${p}</span>`;
+  }).join(' ') || '<span style="color:var(--text-muted);font-size:0.7rem;">None detected</span>';
+  
+  const ping = dev.latency ? `${dev.latency.toFixed(1)} ms` : (dev.is_gateway ? '< 1 ms' : '-');
+
+  hud.innerHTML = `
+    <div class="topo-hud-header">
+      <div class="topo-hud-title">${escapeHtml(dev.name || dev.ip || node.name)}</div>
+      <span class="tag ${cat}">${cat.replace('_', ' ').toUpperCase()}</span>
+    </div>
+    <div class="topo-hud-row"><span class="topo-hud-k">IP Address:</span><span class="topo-hud-v">${dev.ip || '-'}</span></div>
+    <div class="topo-hud-row"><span class="topo-hud-k">MAC / Vendor:</span><span class="topo-hud-v" style="font-family:var(--font-sans);font-size:0.7rem;">${escapeHtml(dev.vendor || dev.mac || '-')}</span></div>
+    <div class="topo-hud-row"><span class="topo-hud-k">Latency:</span><span class="topo-hud-v" style="color:var(--accent-green);">${ping}</span></div>
+    <div class="topo-hud-ports">${ports}</div>
+    <button class="btn btn-sm btn-primary topo-hud-btn" id="btn-hud-inspect">Configure & Inspect</button>
+  `;
+
+  hud.querySelector('#btn-hud-inspect')?.addEventListener('click', () => {
+    hud.style.display = 'none';
+    openInspector(dev);
+  });
+
+  hud.addEventListener('mouseenter', () => clearTimeout(hudTimeout));
+  hud.addEventListener('mouseleave', scheduleHideNodeHud);
+
+  const container = document.getElementById('canvas-container');
+  if (container) {
+    const rect = container.getBoundingClientRect();
+    let x = event.clientX - rect.left + 15;
+    let y = event.clientY - rect.top + 15;
+    if (x + 240 > rect.width) x = event.clientX - rect.left - 245;
+    if (y + 180 > rect.height) y = event.clientY - rect.top - 180;
+
+    hud.style.left = `${Math.max(10, x)}px`;
+    hud.style.top = `${Math.max(10, y)}px`;
+    hud.style.display = 'block';
+  }
+}
+
+function scheduleHideNodeHud() {
+  hudTimeout = setTimeout(() => {
+    const hud = document.getElementById('topo-hud');
+    if (hud) hud.style.display = 'none';
+  }, 300);
+}
+
 function renderTopology(topo) {
   const svg = document.getElementById('topo-svg');
   if (!svg) return;
   svg.innerHTML = '';
 
-  const width = svg.clientWidth || 920;
-  const height = svg.clientHeight || 560;
+  const width = svg.clientWidth || 960;
+  const height = svg.clientHeight || 600;
+
+  // Technical Cyber Grid Definitions
+  const defs = document.createElementNS('http://www.w3.org/2000/svg', 'defs');
+  defs.innerHTML = `
+    <pattern id="cyber-grid" width="36" height="36" patternUnits="userSpaceOnUse">
+      <circle cx="18" cy="18" r="1" fill="rgba(125, 207, 255, 0.12)" />
+      <path d="M 36 0 L 0 0 0 36" fill="none" stroke="rgba(255, 255, 255, 0.025)" stroke-width="0.5"/>
+    </pattern>
+  `;
+  svg.appendChild(defs);
 
   const mainG = document.createElementNS('http://www.w3.org/2000/svg', 'g');
   mainG.setAttribute('id', 'topo-main-group');
   svg.appendChild(mainG);
+
+  // Background Grid spanning wide for panning
+  const gridRect = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+  gridRect.setAttribute('x', '-2500');
+  gridRect.setAttribute('y', '-2500');
+  gridRect.setAttribute('width', '7000');
+  gridRect.setAttribute('height', '7000');
+  gridRect.setAttribute('fill', 'url(#cyber-grid)');
+  gridRect.setAttribute('pointer-events', 'none');
+  mainG.appendChild(gridRect);
 
   const nodes = [];
   const links = [];
@@ -430,7 +670,7 @@ function renderTopology(topo) {
     name: topo.wan?.isp || 'Aussie Broadband',
     sub: `${topo.wan?.ip || '117.20.69.236'} (AU)`,
     category: 'internet',
-    x: width * 0.10,
+    x: width * 0.09,
     y: height * 0.50,
     r: 32,
     data: { name: 'Internet / Upstream ISP', ...topo.wan, category: 'internet' }
@@ -443,13 +683,13 @@ function renderTopology(topo) {
     name: 'NBN NTD (Modem)',
     sub: 'Optical Terminal',
     category: 'modem',
-    x: width * 0.28,
+    x: width * 0.23,
     y: height * 0.50,
     r: 28,
     data: { ...topo.modem, category: 'modem' }
   };
   nodes.push(modemNode);
-  links.push({ source: wanNode, target: modemNode, wired: true });
+  links.push({ source: wanNode, target: modemNode, wired: true, medium: '1000/50 NBN' });
 
   // 3. Router (TP-Link Archer BE550 v2)
   const routerNode = {
@@ -457,7 +697,7 @@ function renderTopology(topo) {
     name: topo.router?.name || 'Archer BE550 v2',
     sub: `${topo.host?.gateway || '192.168.0.1'} (Wi-Fi 7)`,
     category: 'router',
-    x: width * 0.48,
+    x: width * 0.40,
     y: height * 0.50,
     r: 36,
     data: {
@@ -468,7 +708,7 @@ function renderTopology(topo) {
     }
   };
   nodes.push(routerNode);
-  links.push({ source: modemNode, target: routerNode, wired: true });
+  links.push({ source: modemNode, target: routerNode, wired: true, medium: '2.5G SFP+ WAN' });
 
   // 4. Extender (Netgear EX6250v2)
   const extDevice = topo.devices?.find(d => d.category === 'extender');
@@ -479,45 +719,86 @@ function renderTopology(topo) {
       name: extDevice.name || 'Netgear EX6250v2',
       sub: `${extDevice.ip} (Mesh)`,
       category: 'extender',
-      x: width * 0.68,
-      y: height * 0.20,
+      x: width * 0.57,
+      y: height * 0.22,
       r: 28,
       data: extDevice
     };
     nodes.push(extenderNode);
-    links.push({ source: routerNode, target: extenderNode, wired: false });
+    links.push({ source: routerNode, target: extenderNode, wired: false, medium: '5 GHz Mesh' });
   }
 
-  // 5. Client devices (Cameras, NVRs, Host, Smart TVs, Custom configured PCs)
-  const clientDevices = topo.devices?.filter(d => !d.is_gateway && d.category !== 'extender') || [];
-  const clientCount = clientDevices.length;
-  
-  clientDevices.forEach((dev, idx) => {
-    const clientX = width * 0.84;
-    const clientY = (height * 0.12) + (idx / Math.max(clientCount - 1, 1)) * (height * 0.78);
+  // 5. Host Node (Workstation)
+  const hostDev = topo.devices?.find(d => d.is_local_host) || topo.host;
+  let hostNode = null;
+  if (hostDev) {
+    hostNode = {
+      id: 'host',
+      name: hostDev.name || 'Omarchy Workstation',
+      sub: `${hostDev.ip || '192.168.0.5'} (Local)`,
+      category: 'host',
+      x: width * 0.58,
+      y: height * 0.74,
+      r: 28,
+      data: { ...hostDev, is_local_host: true, category: 'host' }
+    };
+    nodes.push(hostNode);
+    links.push({ source: routerNode, target: hostNode, wired: false, medium: 'Wi-Fi 7 (6 GHz)' });
+  }
 
+  // 6. Remaining Client devices partitioned into clean lanes
+  const otherDevices = topo.devices?.filter(d => !d.is_gateway && d.category !== 'extender' && !d.is_local_host) || [];
+  
+  // Separate into Media/TVs vs Surveillance/Other
+  const lane1Devices = otherDevices.filter(d => d.category === 'camera' || d.category === 'nvr');
+  const lane2Devices = otherDevices.filter(d => d.category !== 'camera' && d.category !== 'nvr');
+
+  // Place Lane 1 (Cameras/NVR at x: width * 0.78)
+  lane1Devices.forEach((dev, idx) => {
+    const total = Math.max(lane1Devices.length, 1);
+    const clientY = (height * 0.16) + (idx / Math.max(total - 1, 1)) * (height * 0.68);
     const cNode = {
-      id: `dev-${idx}`,
-      name: dev.name || `Device ${dev.ip}`,
-      sub: dev.ip,
-      category: dev.category || 'unknown',
-      x: clientX,
-      y: clientY,
-      r: dev.is_local_host ? 26 : (dev.category === 'camera' || dev.category === 'nvr' ? 24 : 22),
+      id: `cam-${idx}`,
+      name: dev.name || `Cam ${dev.ip}`,
+      sub: `${dev.ip}`,
+      category: dev.category || 'camera',
+      x: width * 0.77,
+      y: total === 1 ? height * 0.40 : clientY,
+      r: 24,
       data: dev
     };
     nodes.push(cNode);
-    links.push({ source: routerNode, target: cNode, wired: false });
+    links.push({ source: routerNode, target: cNode, wired: false, medium: 'IoT VLAN (2.4 GHz)' });
   });
 
-  // Render SVG Links
+  // Place Lane 2 (Smart TVs, Media, PCs at x: width * 0.92)
+  lane2Devices.forEach((dev, idx) => {
+    const total = Math.max(lane2Devices.length, 1);
+    const clientY = (height * 0.16) + (idx / Math.max(total - 1, 1)) * (height * 0.68);
+    const cNode = {
+      id: `dev-${idx}`,
+      name: dev.name || `Device ${dev.ip}`,
+      sub: `${dev.ip}`,
+      category: dev.category || 'unknown',
+      x: width * 0.92,
+      y: total === 1 ? height * 0.60 : clientY,
+      r: 23,
+      data: dev
+    };
+    nodes.push(cNode);
+    const targetSource = (extenderNode && idx % 2 === 1) ? extenderNode : routerNode;
+    const med = dev.category === 'smart_tv' ? '5 GHz Wi-Fi' : 'LAN';
+    links.push({ source: targetSource, target: cNode, wired: false, medium: med });
+  });
+
+  // Render Links
   links.forEach(l => {
     const line = document.createElementNS('http://www.w3.org/2000/svg', 'path');
     const dx = l.target.x - l.source.x;
     const dy = l.target.y - l.source.y;
-    const cx1 = l.source.x + dx * 0.5;
+    const cx1 = l.source.x + dx * 0.45;
     const cy1 = l.source.y;
-    const cx2 = l.source.x + dx * 0.5;
+    const cx2 = l.source.x + dx * 0.55;
     const cy2 = l.target.y;
     const d = `M ${l.source.x} ${l.source.y} C ${cx1} ${cy1}, ${cx2} ${cy2}, ${l.target.x} ${l.target.y}`;
     
@@ -525,6 +806,31 @@ function renderTopology(topo) {
     line.setAttribute('fill', 'none');
     line.setAttribute('class', `topo-link ${l.wired ? 'wired' : ''}`);
     mainG.appendChild(line);
+
+    // Link Medium Badge
+    if (l.medium && dx > 90) {
+      const midX = (l.source.x + l.target.x) / 2;
+      const midY = (l.source.y + l.target.y) / 2 - 8;
+      
+      const badgeG = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+      badgeG.setAttribute('transform', `translate(${midX}, ${midY})`);
+      
+      const bText = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+      bText.setAttribute('class', 'link-badge-text');
+      bText.textContent = l.medium;
+      
+      const textLen = l.medium.length * 5.2 + 10;
+      const bRect = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+      bRect.setAttribute('x', -textLen / 2);
+      bRect.setAttribute('y', -7);
+      bRect.setAttribute('width', textLen);
+      bRect.setAttribute('height', 14);
+      bRect.setAttribute('class', 'link-badge-rect');
+
+      badgeG.appendChild(bRect);
+      badgeG.appendChild(bText);
+      mainG.appendChild(badgeG);
+    }
   });
 
   // Render SVG Nodes
@@ -534,44 +840,61 @@ function renderTopology(topo) {
     g.setAttribute('class', `topo-node ${isHighlighted ? 'highlighted' : ''}`);
     g.setAttribute('transform', `translate(${n.x}, ${n.y})`);
 
-    // Outer glow for key or highlighted nodes
-    if (n.category === 'router' || n.category === 'host' || n.category === 'camera' || isHighlighted) {
-      const glow = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
-      glow.setAttribute('r', n.r + 6);
-      glow.setAttribute('fill', 'none');
-      let glowColor = 'rgba(125, 207, 255, 0.2)';
-      if (n.category === 'host') glowColor = 'rgba(158, 206, 106, 0.2)';
-      if (n.category === 'camera') glowColor = 'rgba(245, 158, 11, 0.25)';
-      if (isHighlighted) glowColor = 'rgba(247, 118, 142, 0.5)';
-      glow.setAttribute('stroke', glowColor);
-      glow.setAttribute('stroke-width', isHighlighted ? '3' : '2');
-      g.appendChild(glow);
-    }
+    // Outer glowing halo
+    const glow = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+    glow.setAttribute('r', n.r + 6);
+    glow.setAttribute('fill', 'none');
+    glow.setAttribute('class', 'node-halo');
+    let glowColor = 'rgba(125, 207, 255, 0.18)';
+    if (n.category === 'host') glowColor = 'rgba(158, 206, 106, 0.25)';
+    if (n.category === 'camera') glowColor = 'rgba(245, 158, 11, 0.25)';
+    if (n.category === 'nvr') glowColor = 'rgba(236, 72, 153, 0.25)';
+    if (isHighlighted) glowColor = 'rgba(247, 118, 142, 0.6)';
+    glow.setAttribute('stroke', glowColor);
+    glow.setAttribute('stroke-width', isHighlighted ? '3' : '2');
+    g.appendChild(glow);
 
     // Node Circle Background
     const circle = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
     circle.setAttribute('r', n.r);
     circle.setAttribute('class', 'node-bg');
     if (n.category === 'router') circle.setAttribute('stroke', '#7dcfff');
-    if (n.category === 'host') circle.setAttribute('stroke', '#9ece6a');
-    if (n.category === 'camera') circle.setAttribute('stroke', '#f59e0b');
-    if (n.category === 'nvr') circle.setAttribute('stroke', '#ec4899');
-    if (n.category === 'smart_tv') circle.setAttribute('stroke', '#e0af68');
+    else if (n.category === 'host') circle.setAttribute('stroke', '#9ece6a');
+    else if (n.category === 'camera') circle.setAttribute('stroke', '#f59e0b');
+    else if (n.category === 'nvr') circle.setAttribute('stroke', '#ec4899');
+    else if (n.category === 'smart_tv') circle.setAttribute('stroke', '#e0af68');
+    else if (n.category === 'extender') circle.setAttribute('stroke', '#7aa2f7');
+    else if (n.category === 'internet') circle.setAttribute('stroke', '#bb9af7');
     g.appendChild(circle);
 
-    // Node Icon Text
-    const iconText = document.createElementNS('http://www.w3.org/2000/svg', 'text');
-    iconText.setAttribute('text-anchor', 'middle');
-    iconText.setAttribute('dominant-baseline', 'central');
-    iconText.setAttribute('font-size', n.r * 0.8);
-    iconText.textContent = ICONS[n.category] || ICONS.unknown;
-    g.appendChild(iconText);
+    // Inner subtle ring
+    const innerCircle = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+    innerCircle.setAttribute('r', n.r * 0.72);
+    innerCircle.setAttribute('class', 'node-inner-circle');
+    g.appendChild(innerCircle);
+
+    // Node Vector Icon
+    const iconG = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+    iconG.innerHTML = getNodeIconSvg(n.category, n.r);
+    g.appendChild(iconG);
+
+    // Live Ping Status Dot
+    const statusDot = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+    statusDot.setAttribute('cx', n.r * 0.7);
+    statusDot.setAttribute('cy', -n.r * 0.7);
+    statusDot.setAttribute('r', '4');
+    statusDot.setAttribute('class', 'node-status-dot');
+    let dotColor = '#10b981';
+    if (n.data?.latency > 35) dotColor = '#e0af68';
+    if (n.data?.latency > 80) dotColor = '#f43f5e';
+    statusDot.setAttribute('fill', dotColor);
+    g.appendChild(statusDot);
 
     // Title label below node
     const titleText = document.createElementNS('http://www.w3.org/2000/svg', 'text');
     titleText.setAttribute('y', n.r + 14);
     titleText.setAttribute('class', 'node-text-title');
-    titleText.textContent = truncate(n.name, 18);
+    titleText.textContent = truncate(n.name, 16);
     g.appendChild(titleText);
 
     // Sub label
@@ -581,8 +904,18 @@ function renderTopology(topo) {
     subText.textContent = n.sub;
     g.appendChild(subText);
 
-    // Interaction
+    // Hover HUD Interactions
+    g.addEventListener('mouseenter', (e) => {
+      showNodeHud(n, e);
+    });
+    g.addEventListener('mouseleave', scheduleHideNodeHud);
+
+    // Click Selection
     g.addEventListener('click', () => {
+      document.querySelectorAll('.topo-node').forEach(nodeEl => nodeEl.classList.remove('selected'));
+      g.classList.add('selected');
+      const hud = document.getElementById('topo-hud');
+      if (hud) hud.style.display = 'none';
       openInspector(n.data);
     });
 
@@ -916,20 +1249,27 @@ function renderSolution(sol) {
     const vLinks = sol.visual_diagram.links || [];
 
     vNodes.forEach((node, i) => {
+      const stepNum = String(i + 1).padStart(2, '0');
       nodesHtml += `
-        <div class="flow-step-node" style="border-color:${node.color || 'var(--border)'}">
+        <div class="flow-step-node" style="border-color:${node.color || 'var(--border-hover)'}">
+          <span class="flow-step-num">${stepNum}</span>
           <div class="flow-node-icon">${node.icon || '📦'}</div>
-          <div class="flow-node-label">${node.label}</div>
-          <div class="flow-node-sub">${node.sub || ''}</div>
+          <div class="flow-node-label">${escapeHtml(node.label)}</div>
+          <div class="flow-node-sub">${escapeHtml(node.sub || '')}</div>
         </div>
       `;
 
       if (i < vNodes.length - 1) {
-        const link = vLinks[i] || { label: 'Data' };
+        const link = vLinks[i] || { label: 'Data Flow' };
         nodesHtml += `
           <div class="flow-arrow-col">
-            <span class="flow-arrow-label">${link.label}</span>
-            <span class="flow-arrow-line">➔</span>
+            <span class="flow-arrow-label">${escapeHtml(link.label || 'Direct Link')}</span>
+            <span class="flow-arrow-line">
+              <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                <line x1="5" y1="12" x2="19" y2="12"></line>
+                <polyline points="12 5 19 12 12 19"></polyline>
+              </svg>
+            </span>
           </div>
         `;
       }
@@ -937,7 +1277,10 @@ function renderSolution(sol) {
 
     vCard.innerHTML = `
       <div class="visual-flow-header">
-        <span class="visual-flow-title">📊 Visual Setup & Data Flow: ${sol.visual_diagram.title || 'Architecture Flowchart'}</span>
+        <span class="visual-flow-title">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:16px;height:16px;color:var(--accent-cyan);"><rect x="3" y="3" width="7" height="7"></rect><rect x="14" y="3" width="7" height="7"></rect><rect x="14" y="14" width="7" height="7"></rect><rect x="3" y="14" width="7" height="7"></rect></svg>
+          Interactive Visual Flow: ${escapeHtml(sol.visual_diagram.title || 'Architecture & Protocol Pipeline')}
+        </span>
       </div>
       <div class="flow-container">
         ${nodesHtml}
@@ -1233,10 +1576,23 @@ function renderMarkdown(md) {
 // -------------------------------------------------------------
 function initDeviceToolbar() {
   const searchInput = document.getElementById('device-search-input');
+  const clearBtn = document.getElementById('btn-clear-search');
+  
   if (searchInput) {
     searchInput.addEventListener('input', (e) => {
       state.deviceSearch = e.target.value.toLowerCase().trim();
+      if (clearBtn) clearBtn.style.display = e.target.value ? 'inline-block' : 'none';
       if (state.topology) renderDeviceTable(state.topology.devices || []);
+    });
+  }
+
+  if (clearBtn && searchInput) {
+    clearBtn.addEventListener('click', () => {
+      searchInput.value = '';
+      state.deviceSearch = '';
+      clearBtn.style.display = 'none';
+      if (state.topology) renderDeviceTable(state.topology.devices || []);
+      searchInput.focus();
     });
   }
 
@@ -1295,6 +1651,19 @@ function renderDeviceTable(devices) {
     return true;
   });
 
+  if (filtered.length === 0) {
+    const tr = document.createElement('tr');
+    tr.innerHTML = `
+      <td colspan="7" style="text-align:center;padding:36px 18px;color:var(--text-muted);">
+        <div style="font-size:1.8rem;margin-bottom:8px;">🔍</div>
+        <div style="font-weight:600;color:var(--text-dim);">No devices match the current filter or search query</div>
+        <div style="font-size:0.75rem;margin-top:4px;">Try clearing your search or switching to "All Devices"</div>
+      </td>
+    `;
+    tbody.appendChild(tr);
+    return;
+  }
+
   filtered.forEach(dev => {
     const tr = document.createElement('tr');
     
@@ -1309,17 +1678,32 @@ function renderDeviceTable(devices) {
     const ports = (dev.open_ports || []).map(p => {
       const isCamPort = [554, 8554, 8000, 37777, 8899, 7443].includes(p);
       return `<span class="port-tag ${isCamPort ? 'cam' : ''}">${p}</span>`;
-    }).join(' ') || '<span class="text-muted">None detected</span>';
+    }).join(' ') || '<span class="text-muted" style="font-size:0.7rem;">None detected</span>';
     
-    const ping = dev.latency ? `${dev.latency.toFixed(1)} ms` : '-';
+    // Colored Latency Badge
+    let latencyBadge = '<span class="latency-pill offline">-</span>';
+    if (dev.latency) {
+      const lat = dev.latency;
+      if (lat < 5) {
+        latencyBadge = `<span class="latency-pill excellent"><span class="pill-dot emerald" style="width:6px;height:6px;"></span>${lat.toFixed(1)} ms</span>`;
+      } else if (lat < 30) {
+        latencyBadge = `<span class="latency-pill good"><span class="pill-dot blue" style="width:6px;height:6px;"></span>${lat.toFixed(1)} ms</span>`;
+      } else {
+        latencyBadge = `<span class="latency-pill moderate"><span class="pill-dot amber" style="width:6px;height:6px;"></span>${lat.toFixed(1)} ms</span>`;
+      }
+    } else if (dev.is_gateway) {
+      latencyBadge = `<span class="latency-pill excellent"><span class="pill-dot emerald" style="width:6px;height:6px;"></span>< 1 ms</span>`;
+    }
+
+    const canWol = Boolean(dev.mac && dev.mac.length >= 12);
 
     tr.innerHTML = `
       <td>
         <div class="device-cell">
           <div class="device-avatar">${ICONS[dev.category] || '⚙️'}</div>
           <div>
-            <div class="device-name-text">${dev.name || dev.ip} ${qosBadge}</div>
-            <div class="device-model-text">${dev.original_name ? `Original: ${dev.original_name}` : (dev.model || dev.description || '')}</div>
+            <div class="device-name-text">${escapeHtml(dev.name || dev.ip)} ${qosBadge}</div>
+            <div class="device-model-text">${escapeHtml(dev.original_name ? `Original: ${dev.original_name}` : (dev.model || dev.description || ''))}</div>
           </div>
         </div>
       </td>
@@ -1330,21 +1714,46 @@ function renderDeviceTable(devices) {
       <td class="code">${dev.ip}</td>
       <td>
         <div class="code">${dev.mac || '-'}</div>
-        <div style="font-size:0.7rem;color:var(--text-muted);">${dev.vendor || ''}</div>
+        <div style="font-size:0.7rem;color:var(--text-muted);">${escapeHtml(dev.vendor || '')}</div>
         ${locBadge}
       </td>
       <td>
-        <div style="font-size:0.75rem;margin-bottom:4px;color:var(--text-dim);">${userS.network_segment || 'Main LAN'}</div>
+        <div style="font-size:0.75rem;margin-bottom:4px;color:var(--text-dim);">${escapeHtml(userS.network_segment || 'Main LAN')}</div>
         <div>${ports}</div>
       </td>
-      <td class="code">${ping}</td>
+      <td>${latencyBadge}</td>
       <td>
-        <button class="btn btn-sm btn-secondary btn-inspect" data-ip="${dev.ip}">Configure & Inspect</button>
+        <div class="row-actions-group">
+          <button class="btn-row-action btn-copy-ip" data-ip="${dev.ip}" title="Copy IP to clipboard">📋</button>
+          ${canWol ? `<button class="btn-row-action btn-row-wol" data-mac="${dev.mac}" data-ip="${dev.ip}" title="Send Wake-on-LAN packet">⚡ WoL</button>` : ''}
+          <button class="btn-row-action btn-row-inspect btn-inspect" data-ip="${dev.ip}">Inspect</button>
+        </div>
       </td>
     `;
 
     tr.querySelector('.btn-inspect').addEventListener('click', () => {
       openInspector(dev);
+    });
+
+    tr.querySelector('.btn-copy-ip')?.addEventListener('click', (e) => {
+      e.stopPropagation();
+      navigator.clipboard.writeText(dev.ip);
+      showToast(`Copied ${dev.ip} to clipboard`, "success", 2000);
+    });
+
+    tr.querySelector('.btn-row-wol')?.addEventListener('click', async (e) => {
+      e.stopPropagation();
+      try {
+        const res = await fetch('/api/devices/wol', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ mac: dev.mac, ip: dev.ip })
+        });
+        const data = await res.json();
+        showToast(data.message || `Sent WoL packet to ${dev.name || dev.ip}`, 'success');
+      } catch (err) {
+        showToast('Failed to send WoL packet: ' + err.message, 'error');
+      }
     });
 
     tbody.appendChild(tr);
@@ -1896,6 +2305,12 @@ function renderBufferbloatResults(data) {
     'F': 'red'
   };
   const colorClass = gradeColors[data.grade] || 'blue';
+  const idleMs = data.idle_ping_ms || 0;
+  const loadedMs = data.loaded_ping_ms || 0;
+  const deltaMs = data.delta_ms || 0;
+  const maxBar = Math.max(loadedMs * 1.25, 50);
+  const idlePct = Math.min(100, Math.max(4, (idleMs / maxBar) * 100));
+  const loadedPct = Math.min(100, Math.max(4, (loadedMs / maxBar) * 100));
 
   container.innerHTML = `
     <div class="bb-result-card">
@@ -1907,10 +2322,27 @@ function renderBufferbloatResults(data) {
         <div class="bb-meta">
           <div class="bb-summary-title">${escapeHtml(data.grade_description || '')}</div>
           <div class="bb-metrics-row">
-            <span class="bb-metric">Idle Latency: <strong>${data.idle_ping_ms?.toFixed(1) || 0} ms</strong></span>
+            <span class="bb-metric">Idle: <strong>${idleMs.toFixed(1)} ms</strong></span>
             <span class="bb-metric-sep">→</span>
-            <span class="bb-metric">Loaded Latency: <strong>${data.loaded_ping_ms?.toFixed(1) || 0} ms</strong></span>
-            <span class="bb-metric-delta">+${data.delta_ms?.toFixed(1) || 0} ms jitter</span>
+            <span class="bb-metric">Loaded: <strong>${loadedMs.toFixed(1)} ms</strong></span>
+            <span class="bb-metric-delta">+${deltaMs.toFixed(1)} ms queue delay</span>
+          </div>
+          <!-- Visual latency bar comparison -->
+          <div style="display:flex;flex-direction:column;gap:5px;margin-top:8px;">
+            <div style="display:flex;align-items:center;gap:8px;font-size:0.72rem;">
+              <span style="width:70px;color:var(--text-muted);font-weight:600;">Idle Ping:</span>
+              <div style="flex:1;height:6px;background:rgba(255,255,255,0.06);border-radius:3px;overflow:hidden;">
+                <div style="width:${idlePct}%;height:100%;background:var(--accent-green);border-radius:3px;box-shadow:0 0 6px rgba(158,206,106,0.5);"></div>
+              </div>
+              <span style="width:55px;text-align:right;font-family:var(--font-mono);font-size:0.72rem;color:var(--text-bright);">${idleMs.toFixed(1)} ms</span>
+            </div>
+            <div style="display:flex;align-items:center;gap:8px;font-size:0.72rem;">
+              <span style="width:70px;color:var(--text-muted);font-weight:600;">Under Load:</span>
+              <div style="flex:1;height:6px;background:rgba(255,255,255,0.06);border-radius:3px;overflow:hidden;">
+                <div style="width:${loadedPct}%;height:100%;background:linear-gradient(90deg, var(--accent-cyan), ${deltaMs > 30 ? 'var(--accent-red)' : 'var(--accent-amber)'});border-radius:3px;"></div>
+              </div>
+              <span style="width:55px;text-align:right;font-family:var(--font-mono);font-size:0.72rem;color:var(--text-bright);">${loadedMs.toFixed(1)} ms</span>
+            </div>
           </div>
         </div>
       </div>
@@ -2060,8 +2492,46 @@ function renderDiagnostics(topo) {
   });
 }
 
+function generateSparklineSvg(samples, strokeColor = '#10b981', fillColor = 'rgba(16, 185, 129, 0.15)') {
+  if (!samples || samples.length < 2) {
+    return `<svg class="metric-sparkline-svg" viewBox="0 0 90 22"><line x1="0" y1="11" x2="90" y2="11" stroke="${strokeColor}" stroke-width="1.5" stroke-dasharray="3,3" opacity="0.4"/></svg>`;
+  }
+  const min = Math.min(...samples);
+  const max = Math.max(...samples);
+  const range = (max - min) || 1;
+  const width = 90;
+  const height = 22;
+  const padY = 3;
+  const usableH = height - padY * 2;
+
+  const points = samples.map((v, i) => {
+    const x = (i / (samples.length - 1)) * width;
+    const y = padY + (1 - (v - min) / range) * usableH;
+    return `${x.toFixed(1)},${y.toFixed(1)}`;
+  });
+
+  const polyline = points.join(' ');
+  const areaPoints = `0,${height} ${polyline} ${width},${height}`;
+  const gradId = `spark-grad-${Math.floor(Math.random() * 1000000)}`;
+
+  return `
+    <svg class="metric-sparkline-svg" viewBox="0 0 ${width} ${height}">
+      <defs>
+        <linearGradient id="${gradId}" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stop-color="${strokeColor}" stop-opacity="0.35"/>
+          <stop offset="100%" stop-color="${strokeColor}" stop-opacity="0.0"/>
+        </linearGradient>
+      </defs>
+      <polygon points="${areaPoints}" fill="url(#${gradId})" />
+      <polyline fill="none" stroke="${strokeColor}" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" points="${polyline}" />
+      <circle cx="${points[points.length - 1].split(',')[0]}" cy="${points[points.length - 1].split(',')[1]}" r="2.5" fill="${strokeColor}" />
+    </svg>
+  `;
+}
+
 function renderMetrics(metrics) {
   const grid = document.getElementById('metrics-grid');
+  if (!grid) return;
   grid.innerHTML = '';
 
   const targets = [
@@ -2072,15 +2542,71 @@ function renderMetrics(metrics) {
   ];
 
   targets.forEach(t => {
-    const m = metrics[t.key] || {};
+    const m = (metrics && metrics[t.key]) || {};
     const card = document.createElement('div');
     card.className = 'metric-card';
-    const avg = m.avg ? `${m.avg.toFixed(1)} ms` : (m.reachable ? 'Online' : 'Timeout');
-    const jitter = m.mdev ? `±${m.mdev.toFixed(2)} ms jitter` : '0% loss';
+
+    let latencyClass = 'offline';
+    let latencyBadge = 'OFFLINE';
+    let strokeColor = '#64748b';
+
+    if (m.reachable && m.avg !== undefined && m.avg !== null) {
+      if (m.avg < 15) {
+        latencyClass = 'excellent';
+        latencyBadge = 'EXCELLENT';
+        strokeColor = '#10b981';
+      } else if (m.avg < 50) {
+        latencyClass = 'good';
+        latencyBadge = 'GOOD';
+        strokeColor = '#7dcfff';
+      } else if (m.avg < 120) {
+        latencyClass = 'moderate';
+        latencyBadge = 'MODERATE';
+        strokeColor = '#e0af68';
+      } else {
+        latencyClass = 'high';
+        latencyBadge = 'HIGH';
+        strokeColor = '#f43f5e';
+      }
+    }
+
+    const avgVal = (m.avg !== undefined && m.avg !== null)
+      ? `${m.avg.toFixed(1)} <span style="font-size: 0.8rem; font-weight: 500; color: var(--text-muted);">ms</span>`
+      : (m.reachable ? 'Online' : 'Timeout');
+    const jitterText = (m.mdev !== undefined && m.mdev !== null)
+      ? `±${m.mdev.toFixed(2)} ms jitter`
+      : `${m.loss || 0}% loss`;
+
+    // Synthesize realistic sparkline points from min, avg, max, mdev
+    let samples = [];
+    if (m.reachable && m.avg !== undefined && m.avg !== null) {
+      const min = m.min ?? (m.avg * 0.85);
+      const max = m.max ?? (m.avg * 1.2);
+      const dev = m.mdev ?? ((max - min) / 3);
+      samples = [
+        Math.max(0.1, m.avg - dev * 0.4),
+        Math.max(0.1, min),
+        Math.max(0.1, m.avg + dev * 0.5),
+        Math.max(0.1, m.avg - dev * 0.2),
+        Math.max(0.1, max),
+        Math.max(0.1, m.avg)
+      ];
+    }
+
+    const sparkSvg = generateSparklineSvg(samples, strokeColor);
+
     card.innerHTML = `
-      <div class="metric-label">${t.label}</div>
-      <div class="metric-val">${avg}</div>
-      <div class="metric-sub">${t.ip} • ${jitter}</div>
+      <div class="metric-header">
+        <div class="metric-label">${t.label}</div>
+        <span class="latency-pill ${latencyClass}">${latencyBadge}</span>
+      </div>
+      <div class="metric-val ${latencyClass === 'high' ? 'danger' : (latencyClass === 'moderate' ? 'warning' : '')}">
+        ${avgVal}
+      </div>
+      <div class="metric-sparkline-row">
+        <div class="metric-sub">${t.ip} • ${jitterText}</div>
+        ${sparkSvg}
+      </div>
     `;
     grid.appendChild(card);
   });
