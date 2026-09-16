@@ -1,0 +1,16 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "netmap"
+version = "1.0.0"
+description = "Network Topology Mapper & Problem Solver GUI for Omarchy Linux"
+readme = "README.md"
+authors = [{ name = "NetMap Team" }]
+dependencies = [
+    "PySide6>=6.6.0"
+]
+
+[project.scripts]
+netmap = "netmap.main:main"

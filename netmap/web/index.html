@@ -1,0 +1,820 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>NetMap - Omarchy Network Topology, Suggestions & Agentic AI</title>
+  <link rel="icon" type="image/svg+xml" href="favicon.svg" />
+  <link rel="stylesheet" href="style.css" />
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <!-- Mermaid.js for rich visual diagrams with SVG fallback -->
+  <script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
+  <script>
+    if (window.mermaid) {
+      mermaid.initialize({
+        startOnLoad: false,
+        theme: 'dark',
+        themeVariables: {
+          darkMode: true,
+          background: '#131722',
+          primaryColor: '#1e293b',
+          primaryTextColor: '#e2e8f0',
+          primaryBorderColor: '#7dcfff',
+          lineColor: '#9ece6a',
+          secondaryColor: '#131722',
+          tertiaryColor: '#0c0e14'
+        }
+      });
+    }
+  </script>
+</head>
+<body>
+  <div class="app-container">
+    <!-- Top Header -->
+    <header class="app-header">
+      <div class="header-left">
+        <div class="logo-group">
+          <div class="logo-icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <circle cx="12" cy="12" r="3"></circle>
+              <path d="M12 3a9 9 0 0 0-9 9m18 0a9 9 0 0 0-9-9m0 18a9 9 0 0 0 9-9m-18 0a9 9 0 0 0 9 9"></path>
+              <circle cx="12" cy="3" r="1.5" fill="currentColor"></circle>
+              <circle cx="21" cy="12" r="1.5" fill="currentColor"></circle>
+              <circle cx="12" cy="21" r="1.5" fill="currentColor"></circle>
+              <circle cx="3" cy="12" r="1.5" fill="currentColor"></circle>
+            </svg>
+          </div>
+          <div>
+            <h1 class="app-title">NetMap <span class="badge-omarchy">OMARCHY AGENTS</span></h1>
+            <p class="app-subtitle" id="connection-status">Scanning network...</p>
+          </div>
+        </div>
+      </div>
+
+      <div class="header-center">
+        <div class="status-pill status-pill-interactive" id="pill-profile" title="Network Profile for active Wi-Fi / AP. Click to switch or manage profiles.">
+          <span class="pill-dot emerald" id="dot-profile"></span>
+          <span class="pill-label">Profile:</span>
+          <span class="pill-val" id="val-profile">Detecting...</span>
+          <span class="pill-badge-live" id="badge-profile-state">LIVE</span>
+          <svg class="pill-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <polyline points="6 9 12 15 18 9"></polyline>
+          </svg>
+        </div>
+        <div class="status-pill" id="pill-router" title="Primary Gateway Router">
+          <span class="pill-dot green"></span>
+          <span class="pill-label">Router:</span>
+          <span class="pill-val" id="val-router">Archer BE550 v2</span>
+        </div>
+        <div class="status-pill" id="pill-isp" title="Broadband ISP & Upstream Network">
+          <span class="pill-dot blue"></span>
+          <span class="pill-label">ISP:</span>
+          <span class="pill-val" id="val-isp">Aussie Broadband</span>
+        </div>
+        <div class="status-pill" id="pill-cgnat" title="Carrier-Grade NAT Status">
+          <span class="pill-dot amber"></span>
+          <span class="pill-label">NAT:</span>
+          <span class="pill-val" id="val-cgnat">CGNAT Active</span>
+        </div>
+        <div class="status-pill" id="pill-ai" title="AI Advisor Engine">
+          <span class="pill-dot purple"></span>
+          <span class="pill-label">AI:</span>
+          <span class="pill-val" id="val-ai">Mistral AI</span>
+        </div>
+      </div>
+
+      <div class="header-right">
+        <button id="btn-rescan" class="btn btn-secondary">
+          <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M21.5 2v6h-6M2.5 22v-6h6M2 11.5a10 10 0 0 1 18.8-4.3M22 12.5a10 10 0 0 1-18.8 4.2"/>
+          </svg>
+          <span id="rescan-text">Rescan Network</span>
+        </button>
+        <button id="btn-settings" class="btn btn-icon" title="Settings & AI Provider">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <circle cx="12" cy="12" r="3"></circle>
+            <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
+          </svg>
+        </button>
+      </div>
+    </header>
+
+    <!-- Navigation Tabs -->
+    <nav class="app-nav">
+      <div class="nav-tabs">
+        <button class="nav-tab active" data-tab="topology">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <rect x="2" y="2" width="6" height="6" rx="1"></rect>
+            <rect x="16" y="2" width="6" height="6" rx="1"></rect>
+            <rect x="9" y="16" width="6" height="6" rx="1"></rect>
+            <path d="M5 8v3a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8m-7 5v3"></path>
+          </svg>
+          Topology Map
+        </button>
+        <button class="nav-tab" data-tab="suggestions">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon>
+          </svg>
+          Network Suggestions
+          <span class="tab-badge" id="sug-badge">0</span>
+        </button>
+        <button class="nav-tab" data-tab="solver">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"></path>
+          </svg>
+          Agent Studio & Solver
+          <span class="tab-badge" id="advisor-badge">Agents Ready</span>
+        </button>
+        <button class="nav-tab" data-tab="docs">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"></path>
+            <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"></path>
+          </svg>
+          AI Documentation
+        </button>
+        <button class="nav-tab" data-tab="router-settings">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <rect x="2" y="2" width="20" height="8" rx="2" ry="2"></rect>
+            <rect x="2" y="14" width="20" height="8" rx="2" ry="2"></rect>
+            <line x1="6" y1="6" x2="6.01" y2="6"></line>
+            <line x1="6" y1="18" x2="6.01" y2="18"></line>
+          </svg>
+          Router & Modem Settings
+        </button>
+        <button class="nav-tab" data-tab="devices">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <rect x="2" y="3" width="20" height="14" rx="2" ry="2"></rect>
+            <line x1="8" y1="21" x2="16" y2="21"></line>
+            <line x1="12" y1="17" x2="12" y2="21"></line>
+          </svg>
+          Device Inventory (<span id="device-count">0</span>)
+        </button>
+        <button class="nav-tab" data-tab="diagnostics">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <polyline points="22 12 18 12 15 21 9 3 6 12 2 12"></polyline>
+          </svg>
+          Diagnostics & Route Trace
+        </button>
+      </div>
+      <div class="nav-right-meta">
+        <span class="wifi-indicator" id="wifi-meta">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M5 12.55a11 11 0 0 1 14.08 0"></path>
+            <path d="M1.42 9a16 16 0 0 1 21.16 0"></path>
+            <path d="M8.53 16.11a6 6 0 0 1 6.95 0"></path>
+            <line x1="12" y1="20" x2="12.01" y2="20"></line>
+          </svg>
+          <span id="wifi-label">Wi-Fi: BananaFarm</span>
+        </span>
+      </div>
+    </nav>
+
+    <!-- Main Content Area -->
+    <main class="app-main">
+      <!-- Saved Profile Banner (shown when viewing a historical network profile) -->
+      <div class="saved-profile-banner" id="saved-profile-banner" style="display:none;">
+        <div class="banner-content">
+          <span class="banner-icon">📁</span>
+          <span class="banner-text">Viewing saved network snapshot: <strong id="banner-profile-name">Profile</strong></span>
+        </div>
+        <button class="btn btn-sm btn-accent" id="btn-return-live">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:14px;height:14px;">
+            <circle cx="12" cy="12" r="3"></circle>
+            <path d="M12 3a9 9 0 0 0-9 9m18 0a9 9 0 0 0-9-9"></path>
+          </svg>
+          Return to Live Network
+        </button>
+      </div>
+
+      <!-- 1. TOPOLOGY VIEW -->
+      <section class="tab-content active" id="tab-topology">
+        <div class="topology-wrapper">
+          <div class="topology-toolbar">
+            <span class="tool-hint">Click any node to inspect details, customize device fields/roles for AI context, view camera RTSP streams, or test latency.</span>
+            
+            <div class="topo-zoom-controls">
+              <button id="btn-zoom-in" class="btn-tool-sm" title="Zoom In">+</button>
+              <button id="btn-zoom-out" class="btn-tool-sm" title="Zoom Out">-</button>
+              <button id="btn-zoom-reset" class="btn-tool-sm" title="Reset View">⟲</button>
+              <button id="btn-export-topo" class="btn-tool-sm" title="Export Topology SVG">Export SVG</button>
+            </div>
+
+            <div class="legend">
+              <span class="leg-item"><span class="leg-dot wan"></span> Internet/WAN</span>
+              <span class="leg-item"><span class="leg-dot router"></span> Wi-Fi 7 Gateway</span>
+              <span class="leg-item"><span class="leg-dot extender"></span> Mesh Extender</span>
+              <span class="leg-item"><span class="leg-dot host"></span> Local Host</span>
+              <span class="leg-item"><span class="leg-dot camera"></span> CCTV / Camera</span>
+              <span class="leg-item"><span class="leg-dot nvr"></span> NVR Recorder</span>
+              <span class="leg-item"><span class="leg-dot tv"></span> Smart TV</span>
+            </div>
+          </div>
+          <div class="canvas-container" id="canvas-container">
+            <svg id="topo-svg" width="100%" height="100%"></svg>
+          </div>
+        </div>
+      </section>
+
+      <!-- 2. NETWORK SUGGESTIONS VIEW -->
+      <section class="tab-content" id="tab-suggestions">
+        <div class="suggestions-layout">
+          <div class="suggestions-header-bar">
+            <div>
+              <h2 class="suggestions-title">Proactive Network Suggestions & Optimizations</h2>
+              <p class="suggestions-desc">Tailored recommendations analyzing your TP-Link Archer BE550 v2 router, Aussie Broadband NBN, Wi-Fi 7 radio, CCTV/NVR topology, and customized device priorities.</p>
+            </div>
+            <div class="suggestions-counters">
+              <span class="counter-badge critical" id="badge-count-critical">0 Critical</span>
+              <span class="counter-badge recommended" id="badge-count-recommended">0 Recommended</span>
+              <span class="counter-badge optimization" id="badge-count-opt">0 Optimizations</span>
+            </div>
+          </div>
+
+          <div class="suggestions-filter-bar">
+            <button class="filter-chip active" data-sug-filter="all">All Suggestions</button>
+            <button class="filter-chip" data-sug-filter="critical">Critical & Security</button>
+            <button class="filter-chip" data-sug-filter="recommended">Recommended</button>
+            <button class="filter-chip" data-sug-filter="optimization">Speed & Tuning</button>
+          </div>
+
+          <div class="suggestions-grid" id="suggestions-container">
+            <!-- Populated dynamically -->
+          </div>
+        </div>
+      </section>
+
+      <!-- 3. AGENT STUDIO & PROBLEM SOLVER VIEW -->
+      <section class="tab-content" id="tab-solver">
+        <div class="solver-layout">
+          <div class="solver-sidebar">
+            <h3 class="sidebar-heading">Preset Goals & Inquiries</h3>
+            <p class="sidebar-desc">Select a preset or ask any network engineering question:</p>
+            <div class="preset-list">
+              <button class="preset-card" data-goal="How do I set up CCTV security cameras or NVR with tvpc, view RTSP streams, and access them remotely?" data-agent="surveillance">
+                <div class="preset-icon">📹</div>
+                <div class="preset-body">
+                  <div class="preset-title">CCTV Cameras & NVR Setup</div>
+                  <div class="preset-sub">Surveillance Agent • RTSP & CGNAT</div>
+                </div>
+              </button>
+
+              <button class="preset-card" data-goal="How do I isolate my security cameras and smart home IoT devices using Archer BE550 features?" data-agent="security">
+                <div class="preset-icon">🔒</div>
+                <div class="preset-body">
+                  <div class="preset-title">Isolate Cameras on IoT Network</div>
+                  <div class="preset-sub">Security Agent • IoT VLAN & Device Isolation</div>
+                </div>
+              </button>
+
+              <button class="preset-card" data-goal="I want to host a game server (Minecraft / Palworld) and set up port forwarding" data-agent="security">
+                <div class="preset-icon">🎮</div>
+                <div class="preset-body">
+                  <div class="preset-title">Host Game Server & Port Forward</div>
+                  <div class="preset-sub">Security Agent • AussieBB CGNAT Opt-out</div>
+                </div>
+              </button>
+
+              <button class="preset-card" data-goal="I want to fix lag spikes, bufferbloat, and reduce my gaming ping" data-agent="performance">
+                <div class="preset-icon">⚡</div>
+                <div class="preset-body">
+                  <div class="preset-title">Fix Gaming Lag & High Ping</div>
+                  <div class="preset-sub">Latency Agent • QoS & Wi-Fi 7 MLO</div>
+                </div>
+              </button>
+
+              <button class="preset-card" data-goal="I want to set up a media server (Jellyfin / Plex) to stream movies to my Bedroom TV and Loft TV" data-agent="media">
+                <div class="preset-icon">🍿</div>
+                <div class="preset-body">
+                  <div class="preset-title">Stream Media to Bedroom & Loft TVs</div>
+                  <div class="preset-sub">Media Agent • Google Cast Ports & H.264</div>
+                </div>
+              </button>
+
+              <button class="preset-card" data-goal="How do I configure my Netgear EX6250v2 extender with my TP-Link Archer BE550 for best Wi-Fi coverage?" data-agent="hardware">
+                <div class="preset-icon">📡</div>
+                <div class="preset-body">
+                  <div class="preset-title">Mesh & Extender Optimization</div>
+                  <div class="preset-sub">Hardware Agent • AP Mode vs Repeater</div>
+                </div>
+              </button>
+
+              <button class="preset-card" data-goal="I want to access my home network remotely from anywhere using WireGuard or Tailscale" data-agent="security">
+                <div class="preset-icon">🛡️</div>
+                <div class="preset-body">
+                  <div class="preset-title">Remote Access VPN & Tailscale</div>
+                  <div class="preset-sub">Security Agent • WireGuard Subnet Router</div>
+                </div>
+              </button>
+            </div>
+          </div>
+
+          <div class="solver-main">
+            <!-- Agent Header & Persona Selector -->
+            <div class="solver-input-card">
+              <div class="agent-selector-row">
+                <div style="display:flex;align-items:center;gap:8px;">
+                  <label for="agent-persona-select" class="agent-select-label">Active Agent:</label>
+                  <select id="agent-persona-select" class="form-select-sm agent-select">
+                    <option value="orchestrator">🧠 Orchestrator (Auto-Triage & Dispatch)</option>
+                    <option value="security">🛡️ Security & CGNAT Specialist</option>
+                    <option value="performance">⚡ Latency & Wi-Fi 7 Specialist</option>
+                    <option value="surveillance">📹 CCTV & Surveillance Specialist</option>
+                    <option value="media">🍿 Media & Casting Specialist</option>
+                    <option value="hardware">📡 Archer BE550 & Hardware Specialist</option>
+                  </select>
+                </div>
+                <span class="active-engine-badge" id="active-engine-label">Engine: Mistral AI</span>
+              </div>
+
+              <div class="input-row" style="margin-top:10px;">
+                <input type="text" id="goal-input" placeholder="Ask any question, or tell the agent what to diagnose (e.g. 'Test camera ports', 'Fix lag spikes', 'Set up Jellyfin')..." />
+                <button id="btn-submit-goal" class="btn btn-primary">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <line x1="22" y1="2" x2="11" y2="13"></line>
+                    <polygon points="22 2 15 22 11 13 2 9 22 2"></polygon>
+                  </svg>
+                  Run Agent Workflow
+                </button>
+              </div>
+            </div>
+
+            <!-- Multi-Turn Conversation Thread -->
+            <div id="agent-chat-thread" class="agent-chat-thread"></div>
+
+            <!-- Main Solution Container (Trace, Visuals, Steps, Action Items) -->
+            <div id="solution-container" class="solution-container">
+              <div class="solution-placeholder">
+                <div class="placeholder-icon">💡</div>
+                <h4>Select a preset above, choose a network suggestion, or prompt the agents</h4>
+                <p>NetMap executes a multi-agent diagnostic loop calling live tools (<code>tool_ping</code>, <code>tool_portscan</code>, <code>tool_read_docs</code>) and returns an interactive trace, rich <strong>Visual Flowcharts</strong>, <strong>Mermaid diagrams</strong>, and executable <strong>Action Buttons</strong>.</p>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- 4. AI DOCUMENTATION & KNOWLEDGE BASE VIEW -->
+      <section class="tab-content" id="tab-docs">
+        <div class="docs-layout">
+          <div class="docs-sidebar">
+            <div class="docs-sidebar-header">
+              <h3>AI Knowledge Base</h3>
+              <p>Reference documentation utilized by NetMap agents during problem solving:</p>
+            </div>
+            <div class="docs-article-list" id="docs-sidebar-list">
+              <!-- Dynamically populated articles -->
+            </div>
+          </div>
+
+          <div class="docs-reader">
+            <div class="docs-reader-header">
+              <div>
+                <h2 id="doc-active-title" class="doc-title">Select an Article</h2>
+                <div id="doc-active-meta" class="doc-meta">Knowledge Base</div>
+              </div>
+              <button id="btn-ask-doc-agent" class="btn btn-sm btn-primary">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:14px;height:14px;"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon></svg>
+                Ask Agent About This Guide
+              </button>
+            </div>
+            <div id="doc-body-content" class="doc-content markdown-body">
+              <div class="solution-placeholder">
+                <div class="placeholder-icon">📖</div>
+                <h4>Select a technical guide on the left</h4>
+                <p>Explore engineering manuals for the TP-Link Archer BE550 v2, Aussie Broadband CGNAT, CCTV RTSP streaming, Wi-Fi 7 MLO, and Netgear extender AP mode.</p>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- 5. ROUTER & MODEM SETTINGS VIEW -->
+      <section class="tab-content" id="tab-router-settings">
+        <div class="settings-view-layout">
+          <div class="settings-grid">
+            <!-- Hardware Card -->
+            <div class="card">
+              <div class="card-header">
+                <h3 class="card-title">Router Hardware & Architecture</h3>
+                <span class="tag router">Wi-Fi 7 BE9300</span>
+              </div>
+              <div class="card-body">
+                <div class="specs-table" id="table-router-hw"></div>
+              </div>
+            </div>
+
+            <!-- LAN & DHCP Settings Card -->
+            <div class="card">
+              <div class="card-header">
+                <h3 class="card-title">Local Area Network (LAN) Settings</h3>
+                <a href="https://192.168.0.1" target="_blank" class="btn btn-sm btn-secondary">Open Web GUI</a>
+              </div>
+              <div class="card-body">
+                <div class="specs-table" id="table-router-lan"></div>
+              </div>
+            </div>
+
+            <!-- Wi-Fi 7 Radio Settings Card -->
+            <div class="card">
+              <div class="card-header">
+                <h3 class="card-title">Wi-Fi 7 & Wireless Settings</h3>
+                <span class="tag host">MLO Active</span>
+              </div>
+              <div class="card-body">
+                <div class="specs-table" id="table-router-wifi"></div>
+              </div>
+            </div>
+
+            <!-- WAN & AussieBB Modem Card -->
+            <div class="card">
+              <div class="card-header">
+                <h3 class="card-title">WAN, Modem & AussieBB ISP</h3>
+                <span class="badge" id="settings-cgnat-badge">CGNAT Active</span>
+              </div>
+              <div class="card-body">
+                <div class="specs-table" id="table-router-wan"></div>
+              </div>
+            </div>
+
+            <!-- Admin GUI Navigation Paths Card -->
+            <div class="card full-width">
+              <div class="card-header">
+                <h3 class="card-title">Direct Navigation Map (TP-Link Archer BE550 Web GUI)</h3>
+              </div>
+              <div class="card-body">
+                <p class="diag-sub">Exact click-paths in the Archer BE550 admin portal (<code>https://192.168.0.1</code>) to configure key features:</p>
+                <div class="nav-paths-grid" id="grid-router-paths"></div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- 6. DEVICES VIEW -->
+      <section class="tab-content" id="tab-devices">
+        <div class="devices-layout">
+          <!-- Filter and Search Toolbar -->
+          <div class="devices-toolbar">
+            <div class="search-box">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <circle cx="11" cy="11" r="8"></circle>
+                <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+              </svg>
+              <input type="text" id="device-search-input" placeholder="Search devices by alias, IP, MAC, role, location, custom fields..." />
+            </div>
+            <div class="device-filters" id="device-filter-bar">
+              <button class="filter-chip active" data-dev-filter="all">All (<span id="count-all">0</span>)</button>
+              <button class="filter-chip" data-dev-filter="camera">Cameras & NVR (<span id="count-cam">0</span>)</button>
+              <button class="filter-chip" data-dev-filter="smart_tv">Smart TVs (<span id="count-tv">0</span>)</button>
+              <button class="filter-chip" data-dev-filter="pc">PCs & Servers (<span id="count-pc">0</span>)</button>
+              <button class="filter-chip" data-dev-filter="router">Network Gear (<span id="count-net">0</span>)</button>
+              <button class="filter-chip" data-dev-filter="custom">Custom Configured (<span id="count-custom">0</span>)</button>
+            </div>
+          </div>
+
+          <div class="table-container">
+            <table class="device-table">
+              <thead>
+                <tr>
+                  <th>Device / Custom Alias</th>
+                  <th>Role & Category</th>
+                  <th>IP Address</th>
+                  <th>MAC & Location</th>
+                  <th>Segment / Ports</th>
+                  <th>Latency</th>
+                  <th>Action</th>
+                </tr>
+              </thead>
+              <tbody id="device-table-body">
+                <!-- Dynamically populated -->
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
+      <!-- 7. DIAGNOSTICS VIEW -->
+      <section class="tab-content" id="tab-diagnostics">
+        <div class="diag-grid">
+          <!-- Route Trace Card -->
+          <div class="card diag-card">
+            <div class="card-header">
+              <h3 class="card-title">Upstream Route Trace & CGNAT</h3>
+              <span class="badge" id="cgnat-badge">CGNAT Detected</span>
+            </div>
+            <div class="card-body">
+              <p class="diag-sub">Hops between this Omarchy host, local gateway, Aussie Broadband exchange, and the internet:</p>
+              <div class="hops-list" id="hops-list">
+                <!-- Hops populated here -->
+              </div>
+            </div>
+          </div>
+
+          <!-- Latency Metrics Card -->
+          <div class="card diag-card">
+            <div class="card-header">
+              <h3 class="card-title">Live Latency & Jitter Monitor</h3>
+              <button id="btn-refresh-metrics" class="btn btn-sm btn-secondary">Ping All</button>
+            </div>
+            <div class="card-body">
+              <div class="metrics-grid" id="metrics-grid">
+                <!-- Ping cards -->
+              </div>
+            </div>
+          </div>
+
+          <!-- Wi-Fi Link Details Card -->
+          <div class="card diag-card">
+            <div class="card-header">
+              <h3 class="card-title">Local Wi-Fi Link Details</h3>
+            </div>
+            <div class="card-body">
+              <div class="wifi-specs-grid" id="wifi-specs-grid">
+                <!-- Wi-Fi stats -->
+              </div>
+            </div>
+          </div>
+
+          <!-- Port Scanner Card -->
+          <div class="card diag-card">
+            <div class="card-header">
+              <h3 class="card-title">LAN Port Scanner (Supports RTSP, NVR, ONVIF)</h3>
+            </div>
+            <div class="card-body">
+              <div class="scanner-form">
+                <input type="text" id="scan-target-ip" placeholder="Target IP (e.g. 192.168.0.1 or 192.168.0.136)" />
+                <button id="btn-run-portscan" class="btn btn-secondary">Scan Ports</button>
+              </div>
+              <div id="portscan-results" class="portscan-results"></div>
+            </div>
+          </div>
+
+          <!-- Bufferbloat & Loaded Latency Benchmark Card -->
+          <div class="card diag-card">
+            <div class="card-header">
+              <h3 class="card-title">Bufferbloat & Loaded Latency Benchmark</h3>
+              <button id="btn-run-bufferbloat" class="btn btn-sm btn-primary">Run Test</button>
+            </div>
+            <div class="card-body">
+              <p class="diag-sub">Tests latency under concurrent network traffic to detect queue delays and evaluate Archer BE550 HomeShield QoS:</p>
+              <div id="bufferbloat-results" class="bufferbloat-container">
+                <div class="bb-idle-state">
+                  <span class="bb-hint">Click "Run Test" to benchmark bufferbloat against Cloudflare (1.1.1.1).</span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Wi-Fi Spectrum & Channel Congestion Survey Card -->
+          <div class="card diag-card">
+            <div class="card-header">
+              <h3 class="card-title">Wi-Fi Spectrum & Channel Congestion Survey</h3>
+              <button id="btn-scan-spectrum" class="btn btn-sm btn-secondary">Scan Spectrum</button>
+            </div>
+            <div class="card-body">
+              <p class="diag-sub">Analyzes nearby BSSIDs across 2.4 GHz, 5 GHz, and 6 GHz to recommend clean router channels:</p>
+              <div class="spectrum-band-tabs">
+                <button class="spectrum-tab active" data-band="5GHz">5 GHz</button>
+                <button class="spectrum-tab" data-band="6GHz">6 GHz (Wi-Fi 7)</button>
+                <button class="spectrum-tab" data-band="2.4GHz">2.4 GHz</button>
+              </div>
+              <div id="spectrum-results" class="spectrum-container">
+                <div class="spectrum-loading">Click "Scan Spectrum" to analyze channel overlap.</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <!-- Node Inspector & Device Settings Drawer -->
+    <div class="inspector-drawer" id="inspector-drawer">
+      <div class="drawer-header">
+        <div class="drawer-title-group">
+          <div class="drawer-avatar" id="drawer-avatar">🖥️</div>
+          <div>
+            <h3 class="drawer-title" id="drawer-name">Device Name</h3>
+            <span class="drawer-badge" id="drawer-category">Category</span>
+          </div>
+        </div>
+        <button id="btn-close-drawer" class="btn-close">&times;</button>
+      </div>
+
+      <div class="drawer-tabs">
+        <button class="drawer-tab active" data-dtab="settings">Custom Settings & AI Context</button>
+        <button class="drawer-tab" data-dtab="hardware">Hardware & Network</button>
+      </div>
+
+      <div class="drawer-body">
+        <!-- 1. CUSTOM SETTINGS & AI CONTEXT PANE -->
+        <div class="drawer-pane active" id="dpane-settings">
+          <div class="drawer-section">
+            <div class="section-title-row">
+              <h4>Preset Device Configuration</h4>
+              <span class="pill-context">Fed into AI Context</span>
+            </div>
+            
+            <div class="form-group-sm">
+              <label for="dev-input-alias">Custom Device Alias / Name</label>
+              <input type="text" id="dev-input-alias" placeholder="e.g. Living Room 4K TV, Omarchy Gaming Rig, Driveway Cam" />
+            </div>
+
+            <div class="form-row-2">
+              <div class="form-group-sm">
+                <label for="dev-select-role">Device Role / Purpose</label>
+                <select id="dev-select-role" class="form-select-sm"></select>
+              </div>
+              <div class="form-group-sm">
+                <label for="dev-select-location">Physical Location</label>
+                <select id="dev-select-location" class="form-select-sm"></select>
+              </div>
+            </div>
+
+            <div class="form-row-2">
+              <div class="form-group-sm">
+                <label for="dev-select-priority">QoS / Traffic Priority</label>
+                <select id="dev-select-priority" class="form-select-sm"></select>
+              </div>
+              <div class="form-group-sm">
+                <label for="dev-select-segment">Network Segment / VLAN</label>
+                <select id="dev-select-segment" class="form-select-sm"></select>
+              </div>
+            </div>
+
+            <div class="form-group-sm">
+              <label for="dev-input-ipres">IP Reservation / Static Note</label>
+              <input type="text" id="dev-input-ipres" placeholder="e.g. DHCP Reserved 192.168.0.5 on Archer BE550" />
+            </div>
+
+            <div class="form-group-sm">
+              <label for="dev-input-notes">Notes & Credentials / Context</label>
+              <textarea id="dev-input-notes" rows="2" placeholder="e.g. RTSP auth admin:password, runs Sunshine 4K stream server"></textarea>
+            </div>
+          </div>
+
+          <!-- Dynamic User-Defined Custom Fields -->
+          <div class="drawer-section">
+            <div class="section-title-row">
+              <h4>Dynamic Custom Fields</h4>
+              <button id="btn-add-custom-field" class="btn btn-sm btn-secondary">+ Add Field</button>
+            </div>
+            <p class="form-hint" style="margin-bottom:8px;">Add arbitrary custom attributes (e.g. GPU, stream URL, OS, backup frequency). The AI solver will use all of these when answering questions.</p>
+            
+            <div id="custom-fields-container" class="custom-fields-list">
+              <!-- Dynamically populated key-value rows -->
+            </div>
+          </div>
+
+          <div class="drawer-save-bar">
+            <button id="btn-save-device-settings" class="btn btn-primary" style="width:100%;">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:16px;height:16px;"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"></path><polyline points="17 21 17 13 7 13 7 21"></polyline><polyline points="7 3 7 8 15 8"></polyline></svg>
+              Save Device Settings & Update AI Context
+            </button>
+          </div>
+        </div>
+
+        <!-- 2. HARDWARE & DISCOVERED PORTS PANE -->
+        <div class="drawer-pane" id="dpane-hardware">
+          <div class="drawer-section">
+            <h4>Hardware Specifications</h4>
+            <div class="spec-row"><span class="spec-k">Manufacturer:</span><span class="spec-v" id="drawer-vendor">-</span></div>
+            <div class="spec-row"><span class="spec-k">Detected Model:</span><span class="spec-v" id="drawer-model">-</span></div>
+            <div class="spec-row"><span class="spec-k">Firmware:</span><span class="spec-v" id="drawer-firmware">-</span></div>
+            <div class="spec-row"><span class="spec-k">Discovered Role:</span><span class="spec-v" id="drawer-role">-</span></div>
+          </div>
+
+          <div class="drawer-section">
+            <h4>Network Addressing</h4>
+            <div class="spec-row"><span class="spec-k">IP Address:</span><span class="spec-v code" id="drawer-ip">-</span></div>
+            <div class="spec-row"><span class="spec-k">MAC Address:</span><span class="spec-v code" id="drawer-mac">-</span></div>
+            <div class="spec-row"><span class="spec-k">Ping Latency:</span><span class="spec-v" id="drawer-ping">-</span></div>
+          </div>
+
+          <div class="drawer-section">
+            <h4>Discovered Ports & Camera Services</h4>
+            <div class="tags-container" id="drawer-ports"></div>
+          </div>
+
+          <div class="drawer-section" id="drawer-features-sec">
+            <h4>Device Capabilities</h4>
+            <ul class="features-list" id="drawer-features"></ul>
+          </div>
+
+          <div class="drawer-actions" id="drawer-actions">
+            <!-- Action buttons injected dynamically -->
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Settings Modal (Mistral AI, OpenRouter & Local Expert) -->
+    <div class="modal-overlay" id="modal-settings">
+      <div class="modal-card">
+        <div class="modal-header">
+          <h3>NetMap AI Engine Settings</h3>
+          <button class="btn-close" id="btn-close-settings">&times;</button>
+        </div>
+        <div class="modal-body">
+          <!-- Provider Selector Tabs -->
+          <div class="provider-toggle-group">
+            <button class="provider-toggle-btn active" data-provider="mistral">
+              <span class="toggle-icon">🌪️</span>
+              <span class="toggle-name">Mistral AI</span>
+            </button>
+            <button class="provider-toggle-btn" data-provider="openrouter">
+              <span class="toggle-icon">🌐</span>
+              <span class="toggle-name">OpenRouter</span>
+            </button>
+            <button class="provider-toggle-btn" data-provider="local">
+              <span class="toggle-icon">💻</span>
+              <span class="toggle-name">Local Expert</span>
+            </button>
+          </div>
+
+          <!-- 1. Mistral AI Configuration -->
+          <div class="provider-panel active" id="panel-mistral">
+            <div class="form-group">
+              <label for="mistral-key">Mistral API Key</label>
+              <p class="form-hint">Enter your official Mistral AI key from <a href="https://console.mistral.ai" target="_blank" rel="noopener">console.mistral.ai</a>. Mistral models deliver fast, rigorous reasoning, structured JSON outputs, and flowchart diagrams.</p>
+              <input type="password" id="mistral-key" placeholder="sk-mistral-..." />
+            </div>
+
+            <div class="form-group">
+              <label for="mistral-model">Mistral Model Selection</label>
+              <select id="mistral-model" class="form-select"></select>
+            </div>
+          </div>
+
+          <!-- 2. OpenRouter Configuration -->
+          <div class="provider-panel" id="panel-openrouter">
+            <div class="form-group">
+              <label for="openrouter-key">OpenRouter API Key</label>
+              <p class="form-hint">Enter your OpenRouter key from <a href="https://openrouter.ai" target="_blank" rel="noopener">openrouter.ai</a> to access free and open-source models (Qwen 2.5 Coder free, DeepSeek R1 free, Llama 3.3 free).</p>
+              <input type="password" id="openrouter-key" placeholder="sk-or-v1-..." />
+            </div>
+
+            <div class="form-group">
+              <label for="openrouter-model">OpenRouter Model Selection</label>
+              <select id="openrouter-model" class="form-select"></select>
+            </div>
+          </div>
+
+          <!-- 3. Local Expert Configuration -->
+          <div class="provider-panel" id="panel-local">
+            <div class="alert-box tip">
+              <div class="alert-title">Built-In Offline Expert Active</div>
+              <div>NetMap includes an embedded deterministic rule solver tailored for TP-Link Archer BE550 v2, Aussie Broadband CGNAT, RTSP cameras, Jellyfin, and Netgear extenders without requiring any API keys or internet connection.</div>
+            </div>
+          </div>
+
+          <div class="form-actions">
+            <button id="btn-save-settings" class="btn btn-primary">Save & Apply Provider</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Network Profiles Modal -->
+    <div class="modal-overlay" id="profiles-modal">
+      <div class="modal-dialog modal-lg">
+        <div class="modal-header">
+          <div class="modal-title-group">
+            <div class="modal-title-icon">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M5 12.55a11 11 0 0 1 14.08 0"></path>
+                <path d="M1.42 9a16 16 0 0 1 21.16 0"></path>
+                <path d="M8.53 16.11a6 6 0 0 1 6.95 0"></path>
+                <line x1="12" y1="20" x2="12.01" y2="20"></line>
+              </svg>
+            </div>
+            <div>
+              <h3>Network Profiles</h3>
+              <p>Wi-Fi access points and networks mapped by NetMap</p>
+            </div>
+          </div>
+          <button class="btn-close" id="close-profiles-modal">&times;</button>
+        </div>
+        <div class="modal-body">
+          <p class="profile-modal-intro">
+            NetMap automatically detects when you connect to a different Wi-Fi network or access point, creating an isolated profile for each. Select any profile below to inspect its mapped devices and topology.
+          </p>
+          <div class="profiles-list-container" id="profiles-list">
+            <!-- Populated dynamically -->
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button class="btn btn-secondary" id="btn-profiles-modal-close">Close</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Floating Toast Notifications -->
+    <div id="toast-container" class="toast-container"></div>
+    <div class="drawer-backdrop" id="drawer-backdrop"></div>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>

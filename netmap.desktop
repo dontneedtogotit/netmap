@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=NetMap
+Comment=Network Topology Mapper & Problem Solver for Omarchy
+Exec=/home/z/.local/bin/netmap
+Icon=/home/z/Projects/netmap/assets/icon.svg
+Terminal=false
+Categories=Network;System;Utility;
+Keywords=netmap;network;map;router;topology;traceroute;ping;wifi;omarchy;
+StartupWMClass=NetMap
