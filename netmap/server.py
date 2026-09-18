@@ -50,8 +50,16 @@ from netmap.agents import (
     tool_list_docs,
     tool_wake_on_lan,
     tool_bufferbloat,
-    tool_wifi_spectrum
+    tool_wifi_spectrum,
+    tool_router_audit
 )
+from netmap.router_client import (
+    RouterClient,
+    load_stored_credentials,
+    save_stored_credentials,
+    clear_stored_credentials
+)
+from netmap.router_analyzer import RouterAnalyzer
 
 BASE_DIR = Path(__file__).parent
 WEB_DIR = BASE_DIR / "web"
@@ -64,6 +72,8 @@ class NetMapState:
         self.is_scanning = False
         self.lock = threading.Lock()
         self.advisor = NetworkAdvisor()
+        self.router_client: Optional[RouterClient] = None
+        self.router_audit: Optional[Dict[str, Any]] = None
 
     def update_topology(self, topo: Dict[str, Any]):
         with self.lock:
@@ -161,6 +171,10 @@ class NetMapHandler(http.server.SimpleHTTPRequestHandler):
                 self._send_json({"articles": tool_list_docs()})
         elif path == "/api/diagnostics/spectrum":
             self.handle_get_spectrum()
+        elif path == "/api/router/audit":
+            self.handle_get_router_audit()
+        elif path == "/api/router/credentials":
+            self.handle_get_router_credentials()
         else:
             super().do_GET()
 
@@ -196,6 +210,12 @@ class NetMapHandler(http.server.SimpleHTTPRequestHandler):
             self.handle_post_agent_chat(data)
         elif path == "/api/agent/execute-action":
             self.handle_post_execute_action(data)
+        elif path == "/api/router/login":
+            self.handle_post_router_login(data)
+        elif path == "/api/router/logout":
+            self.handle_post_router_logout()
+        elif path == "/api/router/credentials/clear":
+            self.handle_post_router_credentials_clear()
         elif path == "/api/ping":
             self.handle_post_ping(data)
         elif path == "/api/portscan":
@@ -326,7 +346,24 @@ class NetMapHandler(http.server.SimpleHTTPRequestHandler):
         if not topo:
             topo = perform_full_network_scan()
             STATE.update_topology(topo)
-        suggestions = topo.get("suggestions") or generate_network_suggestions(topo)
+        suggestions = list(topo.get("suggestions") or generate_network_suggestions(topo))
+        if STATE.router_audit and "findings" in STATE.router_audit:
+            existing_ids = {s.get("id") for s in suggestions}
+            for f in STATE.router_audit.get("findings", []):
+                if f["id"] not in existing_ids:
+                    suggestions.append({
+                        "id": f["id"],
+                        "category": f["category"],
+                        "priority": f["severity"],
+                        "badge": f["badge"],
+                        "title": f["title"],
+                        "description": f["description"],
+                        "current_state": f["current_value"],
+                        "recommended_state": f["recommended_value"],
+                        "be550_path": f["router_path"],
+                        "action_goal": f["ai_prompt"],
+                        "steps": [f["fix_guidance"]]
+                    })
         self._send_json({"suggestions": suggestions})
 
     def handle_get_device_settings(self, query=None):
@@ -483,8 +520,119 @@ class NetMapHandler(http.server.SimpleHTTPRequestHandler):
         elif action_type == "tool_wifi_spectrum":
             res = tool_wifi_spectrum()
             self._send_json({"success": True, "action": action_type, "result": res})
+        elif action_type == "tool_router_audit":
+            gw = params.get("gateway_url", "https://192.168.0.1")
+            pwd = params.get("password", "")
+            user = params.get("username", "admin")
+            res = tool_router_audit(gateway_url=gw, password=pwd, username=user)
+            self._send_json({"success": True, "action": action_type, "result": res})
         else:
             self._send_json({"error": f"Unknown action type '{action_type}'"}, status=400)
+
+    def handle_get_router_audit(self):
+        topo = STATE.get_topology()
+        gw = topo.get("host", {}).get("gateway", "192.168.0.1") if topo else "192.168.0.1"
+        gw_url = f"https://{gw}" if not str(gw).startswith("http") else str(gw)
+        creds = load_stored_credentials(gw_url)
+        self._send_json({
+            "has_audit": STATE.router_audit is not None,
+            "audit": STATE.router_audit or {},
+            "authenticated": STATE.router_client is not None and STATE.router_client.stok is not None,
+            "has_saved_creds": creds is not None,
+            "saved_username": creds.get("username", "admin") if creds else "admin",
+            "gateway_url": gw_url
+        })
+
+    def handle_get_router_credentials(self):
+        topo = STATE.get_topology()
+        gw = topo.get("host", {}).get("gateway", "192.168.0.1") if topo else "192.168.0.1"
+        gw_url = f"https://{gw}" if not str(gw).startswith("http") else str(gw)
+        creds = load_stored_credentials(gw_url)
+        self._send_json({
+            "has_saved_creds": creds is not None,
+            "username": creds.get("username", "admin") if creds else "admin",
+            "gateway_url": gw_url
+        })
+
+    def handle_post_router_login(self, data: Dict[str, Any]):
+        topo = STATE.get_topology()
+        default_gw = topo.get("host", {}).get("gateway", "192.168.0.1") if topo else "192.168.0.1"
+        gw_url = data.get("url") or f"https://{default_gw}"
+        user = data.get("username") or "admin"
+        pwd = data.get("password", "")
+        remember = bool(data.get("remember", False))
+
+        if not pwd:
+            saved = load_stored_credentials(gw_url)
+            if saved and saved.get("password"):
+                pwd = saved.get("password")
+                user = saved.get("username", user)
+
+        if not pwd:
+            self._send_json({"success": False, "error": "Router password is required"}, status=400)
+            return
+
+        client = RouterClient(base_url=gw_url, username=user, password=pwd)
+        login_res = client.login()
+        if not login_res.get("success"):
+            status_code = 401 if "password" in login_res.get("error", "").lower() else 400
+            self._send_json(login_res, status=status_code)
+            return
+
+        if remember:
+            save_stored_credentials(gw_url, user, pwd)
+
+        STATE.router_client = client
+        live_settings = client.fetch_live_settings()
+        analyzer = RouterAnalyzer(live_settings, topology=topo)
+        audit = analyzer.analyze()
+        STATE.router_audit = audit
+
+        if topo:
+            topo["router_audit"] = audit
+            existing_sugs = topo.get("suggestions", [])
+            existing_ids = {s.get("id") for s in existing_sugs}
+            for f in audit.get("findings", []):
+                if f["id"] not in existing_ids:
+                    existing_sugs.append({
+                        "id": f["id"],
+                        "category": f["category"],
+                        "priority": f["severity"],
+                        "badge": f["badge"],
+                        "title": f["title"],
+                        "description": f["description"],
+                        "current_state": f["current_value"],
+                        "recommended_state": f["recommended_value"],
+                        "be550_path": f["router_path"],
+                        "action_goal": f["ai_prompt"],
+                        "steps": [f["fix_guidance"]]
+                    })
+            topo["suggestions"] = existing_sugs
+
+        self._send_json({
+            "success": True,
+            "message": "Router logged in and settings audited successfully",
+            "health_score": audit["health_score"],
+            "grade": audit["grade"],
+            "audit": audit,
+            "settings": live_settings
+        })
+
+    def handle_post_router_logout(self):
+        if STATE.router_client:
+            try:
+                STATE.router_client.logout()
+            except Exception:
+                pass
+            STATE.router_client = None
+        self._send_json({"success": True, "message": "Logged out from router session"})
+
+    def handle_post_router_credentials_clear(self):
+        topo = STATE.get_topology()
+        default_gw = topo.get("host", {}).get("gateway", "192.168.0.1") if topo else "192.168.0.1"
+        clear_stored_credentials(f"https://{default_gw}")
+        clear_stored_credentials(f"http://{default_gw}")
+        self._send_json({"success": True, "message": "Stored router credentials cleared"})
 
     def handle_post_ping(self, data: Dict[str, Any]):
         host = data.get("host", "").strip()

@@ -170,7 +170,46 @@ def tool_wifi_spectrum() -> Dict[str, Any]:
     """Survey surrounding Wi-Fi channels and calculate congestion levels."""
     return get_wifi_spectrum_survey()
 
+def tool_router_audit(gateway_url: str = "https://192.168.0.1", password: str = "", username: str = "admin") -> Dict[str, Any]:
+    """Log into router, extract live settings, and analyze configuration for improvements."""
+    from netmap.router_client import RouterClient, load_stored_credentials
+    from netmap.router_analyzer import RouterAnalyzer
+
+    pwd = password
+    user = username or "admin"
+    if not pwd:
+        saved = load_stored_credentials(gateway_url)
+        if saved:
+            pwd = saved.get("password", "")
+            user = saved.get("username", user)
+
+    if not pwd:
+        return {"success": False, "error": "Router password required. Please log into the router via the Router Settings tab."}
+
+    client = RouterClient(base_url=gateway_url, username=user, password=pwd)
+    login_res = client.login()
+    if not login_res.get("success"):
+        return login_res
+
+    live_settings = client.fetch_live_settings()
+    client.logout()
+
+    analyzer = RouterAnalyzer(live_settings)
+    audit = analyzer.analyze()
+    return {
+        "success": True,
+        "health_score": audit["health_score"],
+        "grade": audit["grade"],
+        "recommendations_count": audit["total_recommendations"],
+        "findings": audit["findings"]
+    }
+
 TOOL_DEFINITIONS = [
+    {
+        "name": "tool_router_audit",
+        "description": "Log into the gateway router using user credentials, extract live configuration, and audit security/performance.",
+        "parameters": {"gateway_url": "Router admin URL (default https://192.168.0.1)", "password": "Admin password", "username": "Admin username"}
+    },
     {
         "name": "tool_ping",
         "description": "Measure ping latency, jitter and reachability for an IP address on the LAN or WAN.",

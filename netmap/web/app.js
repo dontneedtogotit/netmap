@@ -67,6 +67,7 @@ const ICONS = {
 document.addEventListener('DOMContentLoaded', () => {
   initNav();
   initProfiles();
+  initRouterAudit();
   initAgentStudio();
   initDiagnostics();
   initInspector();
@@ -169,6 +170,7 @@ async function loadInitialData() {
     state.topology = data.topology;
     updateUIWithTopology(state.topology);
     await refreshProfilesList();
+    await fetchRouterAuditStatus();
   } catch (err) {
     console.error("Failed to load initial data:", err);
     updateStatus("Error connecting to NetMap engine");
@@ -2199,6 +2201,361 @@ function renderRouterSettings(settings) {
       `;
     }
   }
+
+  if (state.topology && state.topology.router_audit) {
+    renderRouterAudit(state.topology.router_audit);
+  }
+}
+
+// -------------------------------------------------------------
+// Router Audit & Login Controller
+// -------------------------------------------------------------
+function initRouterAudit() {
+  const btnLogin = document.getElementById('btn-router-login');
+  const btnPwdToggle = document.getElementById('btn-toggle-router-pwd');
+  const pwdInput = document.getElementById('router-login-password');
+  const btnClearCreds = document.getElementById('btn-clear-saved-creds');
+  const btnReaudit = document.getElementById('btn-reaudit-router');
+  const btnLogout = document.getElementById('btn-router-logout');
+  const btnBannerAudit = document.getElementById('btn-banner-router-audit');
+
+  if (btnPwdToggle && pwdInput) {
+    btnPwdToggle.addEventListener('click', () => {
+      if (pwdInput.type === 'password') {
+        pwdInput.type = 'text';
+        btnPwdToggle.textContent = '🔒';
+      } else {
+        pwdInput.type = 'password';
+        btnPwdToggle.textContent = '👁️';
+      }
+    });
+  }
+
+  if (btnLogin) {
+    btnLogin.addEventListener('click', () => loginAndAuditRouter());
+  }
+
+  if (pwdInput) {
+    pwdInput.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        loginAndAuditRouter();
+      }
+    });
+  }
+
+  if (btnReaudit) {
+    btnReaudit.addEventListener('click', () => loginAndAuditRouter());
+  }
+
+  if (btnLogout) {
+    btnLogout.addEventListener('click', () => logoutRouter());
+  }
+
+  if (btnClearCreds) {
+    btnClearCreds.addEventListener('click', () => clearSavedRouterCredentials());
+  }
+
+  if (btnBannerAudit) {
+    btnBannerAudit.addEventListener('click', () => {
+      document.querySelectorAll('.nav-tab').forEach(t => t.classList.remove('active'));
+      document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+      const tabBtn = document.querySelector('.nav-tab[data-tab="router-settings"]');
+      if (tabBtn) tabBtn.classList.add('active');
+      const tabContent = document.getElementById('tab-router-settings');
+      if (tabContent) tabContent.classList.add('active');
+      state.activeTab = 'router-settings';
+      const pwd = document.getElementById('router-login-password');
+      if (pwd) pwd.focus();
+    });
+  }
+}
+
+async function fetchRouterAuditStatus() {
+  try {
+    const res = await fetch('/api/router/audit');
+    if (!res.ok) return;
+    const data = await res.json();
+    
+    const urlInput = document.getElementById('router-login-url');
+    const userInput = document.getElementById('router-login-username');
+    const pwdInput = document.getElementById('router-login-password');
+    const btnClearCreds = document.getElementById('btn-clear-saved-creds');
+    const authBadge = document.getElementById('audit-auth-status-badge');
+
+    if (urlInput && data.gateway_url) {
+      urlInput.value = data.gateway_url;
+    }
+    if (userInput && data.saved_username) {
+      userInput.value = data.saved_username;
+    }
+    if (pwdInput && data.has_saved_creds) {
+      pwdInput.placeholder = 'Saved router password active';
+    }
+    if (btnClearCreds) {
+      btnClearCreds.style.display = data.has_saved_creds ? 'inline-block' : 'none';
+    }
+    if (authBadge) {
+      if (data.authenticated) {
+        authBadge.className = 'badge emerald';
+        authBadge.textContent = 'Authenticated (Session Active)';
+      } else if (data.has_audit) {
+        authBadge.className = 'badge blue';
+        authBadge.textContent = 'Audited';
+      } else {
+        authBadge.className = 'badge';
+        authBadge.textContent = 'Not Authenticated';
+      }
+    }
+
+    if (data.has_audit && data.audit) {
+      renderRouterAudit(data.audit);
+    }
+  } catch (err) {
+    console.error('Failed to fetch router audit status:', err);
+  }
+}
+
+async function loginAndAuditRouter() {
+  const urlInput = document.getElementById('router-login-url');
+  const userInput = document.getElementById('router-login-username');
+  const pwdInput = document.getElementById('router-login-password');
+  const rememberInput = document.getElementById('router-login-remember');
+  const btnLogin = document.getElementById('btn-router-login');
+  const btnText = document.getElementById('btn-router-login-text');
+  const msgEl = document.getElementById('router-login-msg');
+
+  const url = urlInput ? urlInput.value.trim() : 'https://192.168.0.1';
+  const username = userInput ? userInput.value.trim() : 'admin';
+  const password = pwdInput ? pwdInput.value : '';
+  const remember = rememberInput ? rememberInput.checked : true;
+
+  if (msgEl) {
+    msgEl.className = 'login-feedback-msg';
+    msgEl.textContent = '';
+  }
+
+  if (!password && (!pwdInput || !pwdInput.placeholder.includes('Saved'))) {
+    if (msgEl) {
+      msgEl.className = 'login-feedback-msg error';
+      msgEl.textContent = 'Please enter router password';
+    }
+    if (pwdInput) pwdInput.focus();
+    return;
+  }
+
+  if (btnLogin) btnLogin.disabled = true;
+  if (btnText) btnText.textContent = 'Authenticating & Auditing...';
+
+  try {
+    const res = await fetch('/api/router/login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ url, username, password, remember })
+    });
+
+    const data = await res.json();
+
+    if (res.ok && data.success) {
+      showToast('Router logged in & settings audited successfully!', 'success');
+      if (msgEl) {
+        msgEl.className = 'login-feedback-msg success';
+        msgEl.textContent = '✓ Authenticated successfully';
+      }
+      const authBadge = document.getElementById('audit-auth-status-badge');
+      if (authBadge) {
+        authBadge.className = 'badge emerald';
+        authBadge.textContent = 'Authenticated (Session Active)';
+      }
+      const btnClearCreds = document.getElementById('btn-clear-saved-creds');
+      if (btnClearCreds && remember) {
+        btnClearCreds.style.display = 'inline-block';
+      }
+      if (pwdInput) {
+        pwdInput.value = '';
+        pwdInput.placeholder = 'Saved router password active';
+      }
+      renderRouterAudit(data.audit, data.settings);
+
+      // Refresh suggestions tab counter and content
+      if (state.topology) {
+        state.topology.router_audit = data.audit;
+        const sugRes = await fetch('/api/suggestions');
+        if (sugRes.ok) {
+          const sugData = await sugRes.json();
+          state.topology.suggestions = sugData.suggestions;
+          renderSuggestions(sugData.suggestions);
+          const sugBadge = document.getElementById('sug-badge');
+          if (sugBadge) sugBadge.textContent = sugData.suggestions.length;
+        }
+      }
+    } else {
+      let errMsg = data.error || 'Login failed';
+      if (data.attempts_remaining !== undefined) {
+        errMsg += ` (${data.attempts_remaining} attempts remaining before lockout)`;
+      }
+      showToast(errMsg, 'error');
+      if (msgEl) {
+        msgEl.className = 'login-feedback-msg error';
+        msgEl.textContent = `✕ ${errMsg}`;
+      }
+    }
+  } catch (err) {
+    showToast(`Connection error: ${err.message}`, 'error');
+    if (msgEl) {
+      msgEl.className = 'login-feedback-msg error';
+      msgEl.textContent = `✕ Error: ${err.message}`;
+    }
+  } finally {
+    if (btnLogin) btnLogin.disabled = false;
+    if (btnText) btnText.textContent = 'Login & Audit Settings';
+  }
+}
+
+async function logoutRouter() {
+  try {
+    await fetch('/api/router/logout', { method: 'POST' });
+    showToast('Logged out from router', 'info');
+    const authBadge = document.getElementById('audit-auth-status-badge');
+    if (authBadge) {
+      authBadge.className = 'badge';
+      authBadge.textContent = 'Not Authenticated';
+    }
+    const msgEl = document.getElementById('router-login-msg');
+    if (msgEl) {
+      msgEl.className = 'login-feedback-msg';
+      msgEl.textContent = 'Session ended';
+    }
+  } catch (err) {
+    console.error('Logout error:', err);
+  }
+}
+
+async function clearSavedRouterCredentials() {
+  if (!confirm('Clear saved router credentials from this machine?')) return;
+  try {
+    await fetch('/api/router/credentials/clear', { method: 'POST' });
+    showToast('Stored credentials cleared', 'info');
+    const pwdInput = document.getElementById('router-login-password');
+    if (pwdInput) {
+      pwdInput.value = '';
+      pwdInput.placeholder = 'Enter router admin password...';
+    }
+    const btnClearCreds = document.getElementById('btn-clear-saved-creds');
+    if (btnClearCreds) btnClearCreds.style.display = 'none';
+  } catch (err) {
+    showToast(`Error: ${err.message}`, 'error');
+  }
+}
+
+function renderRouterAudit(audit, settings) {
+  const dashboard = document.getElementById('router-audit-dashboard');
+  if (!dashboard || !audit) return;
+  dashboard.style.display = 'block';
+
+  // Health Score and Grade
+  const scoreVal = document.getElementById('health-score-val');
+  const gradeVal = document.getElementById('health-grade-val');
+  const scoreCircle = document.getElementById('health-score-circle');
+
+  const score = audit.health_score ?? 100;
+  if (scoreVal) scoreVal.textContent = score;
+  if (gradeVal) gradeVal.textContent = `Grade ${audit.grade || 'A'}`;
+
+  if (scoreCircle) {
+    scoreCircle.className = 'health-score-circle';
+    if (score >= 90) scoreCircle.classList.add('score-excellent');
+    else if (score >= 80) scoreCircle.classList.add('score-good');
+    else if (score >= 65) scoreCircle.classList.add('score-warning');
+    else scoreCircle.classList.add('score-critical');
+  }
+
+  // Pill counts
+  const pCrit = document.getElementById('pill-audit-critical');
+  const pWarn = document.getElementById('pill-audit-warning');
+  const pRec = document.getElementById('pill-audit-recommended');
+  const pOpt = document.getElementById('pill-audit-opt');
+
+  if (pCrit) pCrit.textContent = `${audit.critical_count || 0} Critical`;
+  if (pWarn) pWarn.textContent = `${audit.warning_count || 0} Warnings`;
+  if (pRec) pRec.textContent = `${audit.recommended_count || 0} Recommended`;
+  if (pOpt) pOpt.textContent = `${audit.optimization_count || 0} Optimizations`;
+
+  // Findings list
+  const container = document.getElementById('audit-findings-list');
+  if (!container) return;
+  container.innerHTML = '';
+
+  const findings = audit.findings || [];
+  if (findings.length === 0) {
+    container.innerHTML = `
+      <div class="solution-placeholder" style="grid-column: 1 / -1;">
+        <div class="placeholder-icon">✓</div>
+        <h4>All Router Settings Optimized!</h4>
+        <p>No critical security risks, Wi-Fi bottlenecks, or misconfigurations were detected.</p>
+      </div>
+    `;
+    return;
+  }
+
+  findings.forEach(f => {
+    const card = document.createElement('div');
+    card.className = `audit-finding-card severity-${f.severity || 'recommended'}`;
+    card.innerHTML = `
+      <div>
+        <div class="finding-top">
+          <div>
+            <div class="finding-title">${escapeHtml(f.title)}</div>
+            <div class="finding-category">${escapeHtml(f.category || 'General')}</div>
+          </div>
+          <span class="badge ${f.severity === 'critical' ? 'red' : f.severity === 'warning' ? 'amber' : 'blue'}">${escapeHtml(f.badge || f.severity)}</span>
+        </div>
+        <p class="finding-desc">${escapeHtml(f.description)}</p>
+        <div class="finding-vals">
+          <div class="finding-val-box">
+            <span>CURRENT VALUE</span>
+            <strong>${escapeHtml(f.current_value)}</strong>
+          </div>
+          <div class="finding-val-box">
+            <span>RECOMMENDED VALUE</span>
+            <strong>${escapeHtml(f.recommended_value)}</strong>
+          </div>
+        </div>
+        <div class="finding-path">
+          📍 Click Path: ${escapeHtml(f.router_path)}
+        </div>
+      </div>
+      <div class="finding-actions">
+        <button type="button" class="btn btn-sm btn-primary btn-ai-guide" data-prompt="${escapeHtml(f.ai_prompt || f.title)}">
+          🤖 Ask AI to Guide Me
+        </button>
+      </div>
+    `;
+
+    const btnAi = card.querySelector('.btn-ai-guide');
+    if (btnAi) {
+      btnAi.addEventListener('click', () => {
+        const prompt = btnAi.getAttribute('data-prompt');
+        document.querySelectorAll('.nav-tab').forEach(t => t.classList.remove('active'));
+        document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+        const tabBtn = document.querySelector('.nav-tab[data-tab="solver"]');
+        if (tabBtn) tabBtn.classList.add('active');
+        const tabContent = document.getElementById('tab-solver');
+        if (tabContent) tabContent.classList.add('active');
+        state.activeTab = 'solver';
+
+        const goalInput = document.getElementById('goal-input');
+        if (goalInput) {
+          goalInput.value = prompt;
+          goalInput.focus();
+        }
+        const btnSubmit = document.getElementById('btn-submit-goal');
+        if (btnSubmit) btnSubmit.click();
+      });
+    }
+
+    container.appendChild(card);
+  });
 }
 
 // -------------------------------------------------------------

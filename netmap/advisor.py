@@ -176,6 +176,9 @@ class NetworkAdvisor:
                 dev_dict["custom_fields"] = user_s.get("custom_fields", {})
             device_context_list.append(dev_dict)
 
+        router_audit = topology.get("router_audit") or {}
+        audit_line = f"- Authenticated Router Audit & Health Score: {json.dumps({'health_score': router_audit.get('health_score'), 'grade': router_audit.get('grade'), 'findings': router_audit.get('findings', [])})}\n" if router_audit else ""
+
         return (
             "You are NetMap AI, an expert network engineer running natively on Omarchy Linux.\n"
             "The user will ask a network question, optimization goal, or troubleshooting request.\n"
@@ -186,6 +189,7 @@ class NetworkAdvisor:
             f"- Wi-Fi Settings: {json.dumps(router_settings.get('wifi_settings', {}))}\n"
             f"- WAN / NBN Modem Settings: {json.dumps(router_settings.get('wan_modem_settings', {}))}\n"
             f"- Archer BE550 Web GUI Paths: {json.dumps(router_settings.get('admin_navigation_paths', {}))}\n"
+            f"{audit_line}"
             f"- Host Machine: {json.dumps({'hostname': host.get('hostname'), 'ip': host.get('ip'), 'interface': host.get('interface'), 'wifi': host.get('wifi')})}\n"
             f"- Discovered Devices & User Configured Settings: {json.dumps(device_context_list, indent=1)}\n\n"
             "CRITICAL INSTRUCTIONS:\n"
