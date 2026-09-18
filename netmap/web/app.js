@@ -262,6 +262,7 @@ function initNav() {
         document.getElementById('profiles-modal')?.classList.remove('active');
         const hud = document.getElementById('topo-hud');
         if (hud) hud.style.display = 'none';
+        currentHoveredNodeId = null;
       }
       return;
     }
@@ -290,6 +291,7 @@ function initNav() {
       document.getElementById('profiles-modal')?.classList.remove('active');
       const hud = document.getElementById('topo-hud');
       if (hud) hud.style.display = 'none';
+      currentHoveredNodeId = null;
     }
   });
 }
@@ -477,6 +479,13 @@ function initTopologyControls() {
     state.topoZoom.scale = Math.min(Math.max(state.topoZoom.scale + delta, 0.5), 2.5);
     applyTopologyTransform();
   }, { passive: false });
+
+  // Persistent HUD card listeners
+  const hud = document.getElementById('topo-hud');
+  if (hud) {
+    hud.addEventListener('mouseenter', () => clearTimeout(hudTimeout));
+    hud.addEventListener('mouseleave', scheduleHideNodeHud);
+  }
 }
 
 function applyTopologyTransform() {
@@ -503,6 +512,7 @@ function exportTopologySvg() {
 }
 
 let hudTimeout = null;
+let currentHoveredNodeId = null;
 
 function getNodeIconSvg(category, r) {
   const s = r * 0.95;
@@ -581,45 +591,71 @@ function showNodeHud(node, event) {
   clearTimeout(hudTimeout);
   const hud = document.getElementById('topo-hud');
   if (!hud) return;
-  const dev = node.data || {};
-  const cat = dev.category || 'unknown';
-  const ports = (dev.open_ports || []).map(p => {
-    const isCam = [554, 8554, 8000, 37777].includes(p);
-    return `<span class="port-tag ${isCam ? 'cam' : ''}">${p}</span>`;
-  }).join(' ') || '<span style="color:var(--text-muted);font-size:0.7rem;">None detected</span>';
-  
-  const ping = dev.latency ? `${dev.latency.toFixed(1)} ms` : (dev.is_gateway ? '< 1 ms' : '-');
 
-  hud.innerHTML = `
-    <div class="topo-hud-header">
-      <div class="topo-hud-title">${escapeHtml(dev.name || dev.ip || node.name)}</div>
-      <span class="tag ${cat}">${cat.replace('_', ' ').toUpperCase()}</span>
-    </div>
-    <div class="topo-hud-row"><span class="topo-hud-k">IP Address:</span><span class="topo-hud-v">${dev.ip || '-'}</span></div>
-    <div class="topo-hud-row"><span class="topo-hud-k">MAC / Vendor:</span><span class="topo-hud-v" style="font-family:var(--font-sans);font-size:0.7rem;">${escapeHtml(dev.vendor || dev.mac || '-')}</span></div>
-    <div class="topo-hud-row"><span class="topo-hud-k">Latency:</span><span class="topo-hud-v" style="color:var(--accent-green);">${ping}</span></div>
-    <div class="topo-hud-ports">${ports}</div>
-    <button class="btn btn-sm btn-primary topo-hud-btn" id="btn-hud-inspect">Configure & Inspect</button>
-  `;
+  const isSameNode = (currentHoveredNodeId === node.id);
+  currentHoveredNodeId = node.id;
 
-  hud.querySelector('#btn-hud-inspect')?.addEventListener('click', () => {
-    hud.style.display = 'none';
-    openInspector(dev);
-  });
+  if (!isSameNode) {
+    const dev = node.data || {};
+    const cat = dev.category || 'unknown';
+    const ports = (dev.open_ports || []).map(p => {
+      const isCam = [554, 8554, 8000, 37777].includes(p);
+      return `<span class="port-tag ${isCam ? 'cam' : ''}">${p}</span>`;
+    }).join(' ') || '<span style="color:var(--text-muted);font-size:0.7rem;">None detected</span>';
+    
+    const ping = dev.latency ? `${dev.latency.toFixed(1)} ms` : (dev.is_gateway ? '< 1 ms' : '-');
 
-  hud.addEventListener('mouseenter', () => clearTimeout(hudTimeout));
-  hud.addEventListener('mouseleave', scheduleHideNodeHud);
+    hud.innerHTML = `
+      <div class="topo-hud-header">
+        <div class="topo-hud-title">${escapeHtml(dev.name || dev.ip || node.name)}</div>
+        <span class="tag ${cat}">${cat.replace('_', ' ').toUpperCase()}</span>
+      </div>
+      <div class="topo-hud-row"><span class="topo-hud-k">IP Address:</span><span class="topo-hud-v">${dev.ip || '-'}</span></div>
+      <div class="topo-hud-row"><span class="topo-hud-k">MAC / Vendor:</span><span class="topo-hud-v" style="font-family:var(--font-sans);font-size:0.7rem;">${escapeHtml(dev.vendor || dev.mac || '-')}</span></div>
+      <div class="topo-hud-row"><span class="topo-hud-k">Latency:</span><span class="topo-hud-v" style="color:var(--accent-green);">${ping}</span></div>
+      <div class="topo-hud-ports">${ports}</div>
+      <button class="btn btn-sm btn-primary topo-hud-btn" id="btn-hud-inspect">Configure & Inspect</button>
+    `;
+
+    hud.querySelector('#btn-hud-inspect')?.addEventListener('click', () => {
+      hud.style.display = 'none';
+      currentHoveredNodeId = null;
+      openInspector(dev);
+    });
+  }
 
   const container = document.getElementById('canvas-container');
-  if (container) {
+  if (container && event) {
     const rect = container.getBoundingClientRect();
-    let x = event.clientX - rect.left + 15;
-    let y = event.clientY - rect.top + 15;
-    if (x + 240 > rect.width) x = event.clientX - rect.left - 245;
-    if (y + 180 > rect.height) y = event.clientY - rect.top - 180;
+    const hudW = hud.offsetWidth || 240;
+    const hudH = hud.offsetHeight || 190;
+    const cursorX = event.clientX - rect.left;
+    const cursorY = event.clientY - rect.top;
 
-    hud.style.left = `${Math.max(10, x)}px`;
-    hud.style.top = `${Math.max(10, y)}px`;
+    let x = cursorX + 24;
+    let y = cursorY + 16;
+
+    if (x + hudW > rect.width - 10) {
+      x = cursorX - hudW - 24;
+    }
+    if (y + hudH > rect.height - 10) {
+      y = cursorY - hudH - 16;
+    }
+
+    x = Math.max(10, Math.min(rect.width - hudW - 10, x));
+    y = Math.max(10, Math.min(rect.height - hudH - 10, y));
+
+    // Guarantee mouse pointer is never inside HUD boundaries to prevent flicker loops
+    if (cursorX >= x - 4 && cursorX <= x + hudW + 4 && cursorY >= y - 4 && cursorY <= y + hudH + 4) {
+      if (cursorY - hudH - 24 >= 10) {
+        y = cursorY - hudH - 24;
+      } else {
+        y = cursorY + 28;
+      }
+    }
+
+    hud.style.left = `${Math.round(x)}px`;
+    hud.style.top = `${Math.round(y)}px`;
     hud.style.display = 'block';
   }
 }
@@ -628,7 +664,8 @@ function scheduleHideNodeHud() {
   hudTimeout = setTimeout(() => {
     const hud = document.getElementById('topo-hud');
     if (hud) hud.style.display = 'none';
-  }, 300);
+    currentHoveredNodeId = null;
+  }, 250);
 }
 
 function renderTopology(topo) {
@@ -842,6 +879,14 @@ function renderTopology(topo) {
     g.setAttribute('class', `topo-node ${isHighlighted ? 'highlighted' : ''}`);
     g.setAttribute('transform', `translate(${n.x}, ${n.y})`);
 
+    // Invisible hit area for ultra-smooth hover target stability
+    const hitArea = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+    hitArea.setAttribute('r', n.r + 8);
+    hitArea.setAttribute('class', 'node-hit-area');
+    hitArea.setAttribute('fill', 'transparent');
+    hitArea.setAttribute('stroke', 'none');
+    g.appendChild(hitArea);
+
     // Outer glowing halo
     const glow = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
     glow.setAttribute('r', n.r + 6);
@@ -918,6 +963,7 @@ function renderTopology(topo) {
       g.classList.add('selected');
       const hud = document.getElementById('topo-hud');
       if (hud) hud.style.display = 'none';
+      currentHoveredNodeId = null;
       openInspector(n.data);
     });
 

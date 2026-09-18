@@ -654,17 +654,27 @@ body {
 
 .topo-node {
   cursor: pointer;
-  transition: transform 0.2s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
-.topo-node:hover {
-  transform: scale(1.06);
+.topo-node * {
+  pointer-events: none;
+}
+
+.topo-node .node-hit-area,
+.topo-node circle.node-bg {
+  pointer-events: all;
 }
 
 .topo-node:hover circle.node-bg {
   stroke: var(--accent-cyan) !important;
   stroke-width: 2.5px !important;
-  filter: drop-shadow(0 0 14px rgba(125, 207, 255, 0.5));
+  filter: drop-shadow(0 0 16px rgba(125, 207, 255, 0.65));
+}
+
+.topo-node:hover .node-halo {
+  stroke: rgba(125, 207, 255, 0.45) !important;
+  stroke-width: 4.5px !important;
+  opacity: 0.95;
 }
 
 .node-halo {
@@ -736,12 +746,12 @@ body {
   backdrop-filter: blur(14px);
   -webkit-backdrop-filter: blur(14px);
   pointer-events: auto;
-  animation: hudFadeIn 0.18s ease-out;
+  animation: hudFadeIn 0.15s ease-out;
 }
 
 @keyframes hudFadeIn {
-  from { opacity: 0; transform: translateY(4px); }
-  to { opacity: 1; transform: translateY(0); }
+  from { opacity: 0; }
+  to { opacity: 1; }
 }
 
 .topo-hud-header {
