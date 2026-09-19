@@ -165,7 +165,7 @@ def send_wake_on_lan(mac_address: str, broadcast_ip: str = "255.255.255.255", po
     except Exception as e:
         return {"success": False, "mac": mac_address, "error": str(e)}
 
-def run_bufferbloat_test(target_ip: str = "1.1.1.1", count: int = 4) -> Dict[str, Any]:
+def run_bufferbloat_test(target_ip: str = "1.1.1.1", count: int = 2) -> Dict[str, Any]:
     """
     Measure idle latency vs latency under concurrent network load to quantify bufferbloat.
     """

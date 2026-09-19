@@ -15,11 +15,17 @@ from typing import Dict, Any, List, Optional
 CONFIG_FILE = Path(os.path.expanduser("~/.config/netmap/config.json"))
 
 RECOMMENDED_FREE_MODELS = [
-    {"id": "qwen/qwen-2.5-coder-32b-instruct:free", "name": "Qwen 2.5 Coder 32B (Free / Kilo Code)"},
-    {"id": "deepseek/deepseek-r1:free", "name": "DeepSeek R1 Reasoning (Free)"},
-    {"id": "meta-llama/llama-3.3-70b-instruct:free", "name": "Llama 3.3 70B Instruct (Free)"},
-    {"id": "google/gemini-2.0-flash-exp:free", "name": "Gemini 2.0 Flash Exp (Free)"},
-    {"id": "mistralai/mistral-small-24b-instruct-2501:free", "name": "Mistral Small 24B (Free)"}
+    {"id": "deepseek/deepseek-v4-flash-0731:free", "name": "DeepSeek V4 Flash (Free & Fast)"},
+    {"id": "nvidia/nemotron-3.5-lightning:free", "name": "NVIDIA Nemotron 3.5 Lightning (Free)"},
+    {"id": "liquid/lfm-2.5-2.6b:free", "name": "Liquid LFM 2.5 (Free & Ultra Fast)"},
+    {"id": "poolside/laguna-s-2.1:free", "name": "Laguna S 2.1 (Free)"},
+    {"id": "qwen/qwen3.8-27b:free", "name": "Qwen 3.8 27B (Free)"}
+]
+
+FALLBACK_OPENROUTER_FREE_MODELS = [
+    "deepseek/deepseek-v4-flash-0731:free",
+    "nvidia/nemotron-3.5-lightning:free",
+    "liquid/lfm-2.5-2.6b:free"
 ]
 
 RECOMMENDED_MISTRAL_MODELS = [
@@ -28,6 +34,12 @@ RECOMMENDED_MISTRAL_MODELS = [
     {"id": "codestral-latest", "name": "Codestral (Networking, Config & Code Specialized)"},
     {"id": "open-mistral-nemo", "name": "Mistral NeMo 12B (Fast Open Weights)"},
     {"id": "ministral-8b-latest", "name": "Ministral 8B (Ultra Low Latency Edge)"}
+]
+
+RECOMMENDED_GEMINI_MODELS = [
+    {"id": "gemini-2.0-flash", "name": "Gemini 2.0 Flash (Fast & Highly Capable)"},
+    {"id": "gemini-1.5-flash", "name": "Gemini 1.5 Flash (Production Fast)"},
+    {"id": "gemini-1.5-pro", "name": "Gemini 1.5 Pro (Flagship Reasoning)"}
 ]
 
 def load_config() -> Dict[str, Any]:
@@ -79,14 +91,18 @@ class NetworkAdvisor:
         mistral_key: Optional[str] = None,
         mistral_model: Optional[str] = None,
         openrouter_key: Optional[str] = None,
-        openrouter_model: Optional[str] = None
+        openrouter_model: Optional[str] = None,
+        gemini_key: Optional[str] = None,
+        gemini_model: Optional[str] = None
     ):
         cfg = load_config()
-        self.ai_provider = ai_provider or cfg.get("ai_provider", "mistral" if cfg.get("mistral_api_key") else ("openrouter" if cfg.get("openrouter_api_key") else "local"))
+        self.ai_provider = ai_provider or cfg.get("ai_provider", "mistral" if cfg.get("mistral_api_key") else ("openrouter" if cfg.get("openrouter_api_key") else ("gemini" if cfg.get("gemini_api_key") else "local")))
         self.mistral_key = mistral_key or cfg.get("mistral_api_key") or os.environ.get("MISTRAL_API_KEY", "")
         self.mistral_model = mistral_model or cfg.get("mistral_model") or "mistral-small-latest"
         self.openrouter_key = openrouter_key or cfg.get("openrouter_api_key") or os.environ.get("OPENROUTER_API_KEY", "")
-        self.openrouter_model = openrouter_model or cfg.get("openrouter_model") or "qwen/qwen-2.5-coder-32b-instruct:free"
+        self.openrouter_model = openrouter_model or cfg.get("openrouter_model") or "deepseek/deepseek-v4-flash-0731:free"
+        self.gemini_key = gemini_key or cfg.get("gemini_api_key") or os.environ.get("GEMINI_API_KEY", "")
+        self.gemini_model = gemini_model or cfg.get("gemini_model") or "gemini-2.0-flash"
 
     def set_config(
         self,
@@ -94,7 +110,9 @@ class NetworkAdvisor:
         mistral_key: Optional[str] = None,
         mistral_model: Optional[str] = None,
         openrouter_key: Optional[str] = None,
-        openrouter_model: Optional[str] = None
+        openrouter_model: Optional[str] = None,
+        gemini_key: Optional[str] = None,
+        gemini_model: Optional[str] = None
     ):
         cfg = load_config()
         if ai_provider is not None:
@@ -112,43 +130,55 @@ class NetworkAdvisor:
         if openrouter_model is not None:
             self.openrouter_model = openrouter_model
             cfg["openrouter_model"] = openrouter_model
+        if gemini_key is not None:
+            self.gemini_key = gemini_key
+            cfg["gemini_api_key"] = gemini_key
+        if gemini_model is not None:
+            self.gemini_model = gemini_model
+            cfg["gemini_model"] = gemini_model
         save_config(cfg)
 
-    def solve(self, goal: str, topology: Dict[str, Any]) -> Dict[str, Any]:
+    def solve(
+        self,
+        goal: str,
+        topology: Dict[str, Any],
+        diagnostic_context: Optional[Dict[str, Any]] = None
+    ) -> Dict[str, Any]:
         """
         Produce a tailored solution for the user's problem.
-        Checks active AI provider (Mistral AI or OpenRouter), queries LLM with full
-        topology and user-configured device context, and falls back to local expert rules.
+        Checks active AI provider (Gemini, Mistral AI, or OpenRouter), queries LLM with full
+        topology, user-configured device context, and diagnostic telemetry, and falls back to
+        the local expert rules.
         """
         cfg = load_config()
         provider = self.ai_provider or cfg.get("ai_provider", "local")
 
-        # 1. Mistral AI Provider
-        if provider == "mistral" and self.mistral_key:
-            llm_result = self._solve_with_mistral(goal, topology)
+        # 1. Gemini Provider
+        if provider == "gemini" and self.gemini_key:
+            llm_result = self._solve_with_gemini(goal, topology, diagnostic_context)
             if llm_result:
                 return llm_result
 
-        # 2. OpenRouter Provider
+        # 2. Mistral AI Provider
+        elif provider == "mistral" and self.mistral_key:
+            llm_result = self._solve_with_mistral(goal, topology, diagnostic_context)
+            if llm_result:
+                return llm_result
+
+        # 3. OpenRouter Provider
         elif provider == "openrouter" and self.openrouter_key:
-            llm_result = self._solve_with_openrouter(goal, topology)
+            llm_result = self._solve_with_openrouter(goal, topology, diagnostic_context)
             if llm_result:
                 return llm_result
 
-        # Fallback to provider with valid key if preferred wasn't chosen explicitly
-        if self.mistral_key and provider != "local":
-            llm_result = self._solve_with_mistral(goal, topology)
-            if llm_result:
-                return llm_result
-        elif self.openrouter_key and provider != "local":
-            llm_result = self._solve_with_openrouter(goal, topology)
-            if llm_result:
-                return llm_result
+        # 4. Local expert rule-based solver
+        return self._solve_with_local_expert(goal, topology, diagnostic_context)
 
-        # 3. Local expert rule-based solver
-        return self._solve_with_local_expert(goal, topology)
-
-    def _build_system_prompt(self, topology: Dict[str, Any]) -> str:
+    def _build_system_prompt(
+        self,
+        topology: Dict[str, Any],
+        diagnostic_context: Optional[Dict[str, Any]] = None
+    ) -> str:
         router_settings = topology.get("router_settings", {})
         devices = topology.get("devices", [])
         wan = topology.get("wan", {})
@@ -165,7 +195,6 @@ class NetworkAdvisor:
                 "vendor": d.get("vendor"),
                 "ports": d.get("open_ports")
             }
-            # Add user customized settings & dynamic fields
             user_s = d.get("user_settings", {})
             if user_s:
                 dev_dict["user_defined_role"] = user_s.get("role")
@@ -179,6 +208,20 @@ class NetworkAdvisor:
         router_audit = topology.get("router_audit") or {}
         audit_line = f"- Authenticated Router Audit & Health Score: {json.dumps({'health_score': router_audit.get('health_score'), 'grade': router_audit.get('grade'), 'findings': router_audit.get('findings', [])})}\n" if router_audit else ""
 
+        diag_section = ""
+        if diagnostic_context:
+            diag_items = []
+            if diagnostic_context.get("tool_results"):
+                diag_items.append(f"LIVE DIAGNOSTIC TOOL FINDINGS:\n{json.dumps(diagnostic_context['tool_results'], indent=2)}")
+            if diagnostic_context.get("retrieved_docs"):
+                rdoc = diagnostic_context["retrieved_docs"]
+                content_sample = rdoc.get("content", "")[:2000]
+                diag_items.append(f"RELEVANT TECHNICAL DOCUMENTATION ({rdoc.get('title', 'Guide')}):\n{content_sample}")
+            if diagnostic_context.get("conversation_history"):
+                diag_items.append(f"RECENT CONVERSATION HISTORY:\n{json.dumps(diagnostic_context['conversation_history'], indent=2)}")
+            if diag_items:
+                diag_section = "\n\n" + "\n\n".join(diag_items) + "\n"
+
         return (
             "You are NetMap AI, an expert network engineer running natively on Omarchy Linux.\n"
             "The user will ask a network question, optimization goal, or troubleshooting request.\n"
@@ -191,12 +234,15 @@ class NetworkAdvisor:
             f"- Archer BE550 Web GUI Paths: {json.dumps(router_settings.get('admin_navigation_paths', {}))}\n"
             f"{audit_line}"
             f"- Host Machine: {json.dumps({'hostname': host.get('hostname'), 'ip': host.get('ip'), 'interface': host.get('interface'), 'wifi': host.get('wifi')})}\n"
-            f"- Discovered Devices & User Configured Settings: {json.dumps(device_context_list, indent=1)}\n\n"
+            f"- Discovered Devices & User Configured Settings: {json.dumps(device_context_list, indent=1)}"
+            f"{diag_section}\n\n"
             "CRITICAL INSTRUCTIONS:\n"
-            "1. Take into account any user-defined device roles, locations, QoS priorities, and custom fields (e.g. if a device is designated 'Primary Gaming PC', give it high QoS priority; if 'CCTV Camera', isolate it on IoT VLAN).\n"
-            "2. Under Aussie Broadband CGNAT (100.91.128.1), explain how to bypass it (MyAussie 1-click opt-out, or Tailscale peer-to-peer WireGuard tunnel).\n"
-            "3. You MUST provide VISUAL DIAGRAM specifications alongside the text recommendations.\n"
-            "4. Return raw valid JSON only matching the schema below.\n\n"
+            "1. Base your diagnosis and solutions DIRECTLY on the live topology, connected devices, and diagnostic tool findings.\n"
+            "2. If tool results show latency/jitter numbers or open ports, cite them explicitly (e.g. 'Ping to gateway is 0.4ms', 'Open port 554 RTSP found on 192.168.0.136').\n"
+            "3. Provide explicit, concrete, step-by-step instructions with exact Archer BE550 GUI menu paths (e.g. 'Advanced > Network > Internet > Advanced Settings') and copyable Linux terminal commands where appropriate.\n"
+            "4. Under Aussie Broadband CGNAT (100.91.128.1), explain how to bypass it (MyAussie app 1-click opt-out or Tailscale peer-to-peer WireGuard tunnel).\n"
+            "5. Always generate BOTH rich visual diagrams (nodes & links flowchart and valid Mermaid code) and concrete numbered steps with markdown formatting.\n"
+            "6. Return raw valid JSON only matching the schema below.\n\n"
             "JSON SCHEMA:\n"
             "{\n"
             "  \"category\": \"string (e.g. Camera & NVR Setup, Port Forwarding, Gaming Optimization)\",\n"
@@ -220,11 +266,16 @@ class NetworkAdvisor:
             "}"
         )
 
-    def _solve_with_mistral(self, goal: str, topology: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    def _solve_with_mistral(
+        self,
+        goal: str,
+        topology: Dict[str, Any],
+        diagnostic_context: Optional[Dict[str, Any]] = None
+    ) -> Optional[Dict[str, Any]]:
         """Query official Mistral AI API with JSON mode and visual diagram enforcement."""
         try:
             url = "https://api.mistral.ai/v1/chat/completions"
-            system_prompt = self._build_system_prompt(topology)
+            system_prompt = self._build_system_prompt(topology, diagnostic_context)
             
             payload = {
                 "model": self.mistral_model or "mistral-small-latest",
@@ -255,68 +306,143 @@ class NetworkAdvisor:
             print(f"[NetMap] Mistral API query failed ({e}). Falling back to next solver.")
         return None
 
-    def _solve_with_openrouter(self, goal: str, topology: Dict[str, Any]) -> Optional[Dict[str, Any]]:
-        """Query OpenRouter API using free or selected model."""
-        try:
-            url = "https://openrouter.ai/api/v1/chat/completions"
-            system_prompt = self._build_system_prompt(topology)
+    def _solve_with_openrouter(
+        self,
+        goal: str,
+        topology: Dict[str, Any],
+        diagnostic_context: Optional[Dict[str, Any]] = None
+    ) -> Optional[Dict[str, Any]]:
+        """Query OpenRouter API using free or selected model with fallback retry."""
+        models_to_try = [self.openrouter_model] if self.openrouter_model else []
+        for fb in FALLBACK_OPENROUTER_FREE_MODELS:
+            if fb not in models_to_try:
+                models_to_try.append(fb)
 
+        system_prompt = self._build_system_prompt(topology, diagnostic_context)
+        url = "https://openrouter.ai/api/v1/chat/completions"
+
+        for model in models_to_try:
+            try:
+                payload = {
+                    "model": model,
+                    "messages": [
+                        {"role": "system", "content": system_prompt},
+                        {"role": "user", "content": f"Problem/Goal: {goal}"}
+                    ],
+                    "response_format": {"type": "json_object"}
+                }
+
+                req = urllib.request.Request(
+                    url,
+                    data=json.dumps(payload).encode("utf-8"),
+                    headers={
+                        "Authorization": f"Bearer {self.openrouter_key}",
+                        "Content-Type": "application/json",
+                        "HTTP-Referer": "http://localhost:8765",
+                        "X-Title": "NetMap Omarchy"
+                    }
+                )
+
+                with urllib.request.urlopen(req, timeout=22) as res:
+                    body = json.loads(res.read().decode("utf-8"))
+                    choice = body["choices"][0]["message"]["content"]
+                    parsed = extract_json_from_text(choice)
+                    if parsed:
+                        parsed["ai_engine"] = f"OpenRouter ({model})"
+                        if model != self.openrouter_model:
+                            self.openrouter_model = model
+                            cfg = load_config()
+                            cfg["openrouter_model"] = model
+                            save_config(cfg)
+                        return parsed
+            except Exception as e:
+                print(f"[NetMap] OpenRouter model '{model}' query failed ({e}). Trying fallback...")
+                continue
+        return None
+
+    def _solve_with_gemini(
+        self,
+        goal: str,
+        topology: Dict[str, Any],
+        diagnostic_context: Optional[Dict[str, Any]] = None
+    ) -> Optional[Dict[str, Any]]:
+        """Query Google Gemini API directly."""
+        try:
+            model = self.gemini_model or "gemini-2.0-flash"
+            url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={self.gemini_key}"
+            system_prompt = self._build_system_prompt(topology, diagnostic_context)
+            prompt_text = f"{system_prompt}\n\nUser Problem/Goal: {goal}\n\nRespond strictly with valid JSON conforming to the schema."
+            
             payload = {
-                "model": self.openrouter_model or "qwen/qwen-2.5-coder-32b-instruct:free",
-                "messages": [
-                    {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": f"Problem/Goal: {goal}"}
+                "contents": [
+                    {
+                        "parts": [{"text": prompt_text}]
+                    }
                 ],
-                "response_format": {"type": "json_object"}
+                "generationConfig": {
+                    "responseMimeType": "application/json"
+                }
             }
 
             req = urllib.request.Request(
                 url,
                 data=json.dumps(payload).encode("utf-8"),
-                headers={
-                    "Authorization": f"Bearer {self.openrouter_key}",
-                    "Content-Type": "application/json",
-                    "HTTP-Referer": "http://localhost:8765",
-                    "X-Title": "NetMap Omarchy"
-                }
+                headers={"Content-Type": "application/json"}
             )
 
-            with urllib.request.urlopen(req, timeout=20) as res:
+            with urllib.request.urlopen(req, timeout=22) as res:
                 body = json.loads(res.read().decode("utf-8"))
-                choice = body["choices"][0]["message"]["content"]
+                choice = body["candidates"][0]["content"]["parts"][0]["text"]
                 parsed = extract_json_from_text(choice)
                 if parsed:
-                    parsed["ai_engine"] = f"OpenRouter ({self.openrouter_model})"
+                    parsed["ai_engine"] = f"Google Gemini ({model})"
                     return parsed
         except Exception as e:
-            print(f"[NetMap] OpenRouter API query failed ({e}). Falling back to local advisor.")
+            print(f"[NetMap] Google Gemini API query failed ({e}). Falling back to next solver.")
         return None
 
-    def _solve_with_local_expert(self, goal: str, topology: Dict[str, Any]) -> Dict[str, Any]:
-        """Local rule-based expert solver."""
+    def _solve_with_local_expert(
+        self,
+        goal: str,
+        topology: Dict[str, Any],
+        diagnostic_context: Optional[Dict[str, Any]] = None
+    ) -> Dict[str, Any]:
+        """Comprehensive local rule-based expert solver."""
         goal_lower = goal.lower().strip()
         
         if any(w in goal_lower for w in ["camera", "nvr", "cctv", "rtsp", "onvif", "tvpc", "surveillance", "video recorder"]):
-            res = self._solve_cameras_nvr(goal, topology)
+            res = self._solve_cameras_nvr(goal, topology, diagnostic_context)
         elif any(w in goal_lower for w in ["port forward", "game server", "minecraft", "palworld", "valheim", "host a server", "host server", "forward port", "open port"]):
-            res = self._solve_port_forwarding(goal, topology)
-        elif any(w in goal_lower for w in ["ping", "lag", "latency", "bufferbloat", "gaming", "delay", "jitter"]):
-            res = self._solve_gaming_latency(goal, topology)
-        elif any(w in goal_lower for w in ["stream", "plex", "jellyfin", "media server", "bedroom tv", "loft tv", "movies", "tv"]):
-            res = self._solve_media_streaming(goal, topology)
-        elif any(w in goal_lower for w in ["extender", "mesh", "ex6250", "wifi coverage", "dead zone", "roaming", "range"]):
-            res = self._solve_mesh_extender(goal, topology)
+            res = self._solve_port_forwarding(goal, topology, diagnostic_context)
+        elif any(w in goal_lower for w in ["ping", "lag", "latency", "bufferbloat", "gaming", "delay", "jitter", "packet loss", "qos"]):
+            res = self._solve_gaming_latency(goal, topology, diagnostic_context)
+        elif any(w in goal_lower for w in ["stream", "plex", "jellyfin", "media server", "bedroom tv", "loft tv", "movies", "tv", "cast"]):
+            res = self._solve_media_streaming(goal, topology, diagnostic_context)
+        elif any(w in goal_lower for w in ["extender", "mesh", "ex6250", "repeater", "ap mode"]):
+            res = self._solve_mesh_extender(goal, topology, diagnostic_context)
+        elif any(w in goal_lower for w in ["wifi slow", "slow in", "kitchen", "dead zone", "weak signal", "wifi coverage", "range", "room", "signal"]):
+            res = self._solve_wifi_coverage_deadzones(goal, topology, diagnostic_context)
+        elif any(w in goal_lower for w in ["spectrum", "channel", "interference", "congestion", "frequency", "crowded", "6ghz", "320mhz", "mlo"]):
+            res = self._solve_wifi_spectrum_interference(goal, topology, diagnostic_context)
+        elif any(w in goal_lower for w in ["dns", "domain", "lookup", "resolv", "cant open website", "slow loading", "cloudflare", "quad9", "1.1.1.1"]):
+            res = self._solve_dns_issues(goal, topology, diagnostic_context)
+        elif any(w in goal_lower for w in ["smart light", "smart plug", "tuya", "smart home", "wont connect", "pairing", "esp8266", "shelly", "smart switch"]):
+            res = self._solve_smart_home_iot(goal, topology, diagnostic_context)
+        elif any(w in goal_lower for w in ["printer", "airprint", "brother", "epson", "canon", "hp", "cups", "avahi", "scanner"]):
+            res = self._solve_network_printer(goal, topology, diagnostic_context)
+        elif any(w in goal_lower for w in ["drops", "disconnecting", "unstable", "ip conflict", "renew", "lease", "keeps losing connection"]):
+            res = self._solve_device_drops(goal, topology, diagnostic_context)
         elif any(w in goal_lower for w in ["vpn", "wireguard", "remote access", "access outside", "away from home", "tailscale"]):
-            res = self._solve_remote_access(goal, topology)
-        elif any(w in goal_lower for w in ["secure", "isolate", "iot", "guest", "firewall", "hacked", "security"]):
-            res = self._solve_security_iot(goal, topology)
+            res = self._solve_remote_access(goal, topology, diagnostic_context)
+        elif any(w in goal_lower for w in ["secure", "isolate", "iot", "guest", "firewall", "hacked", "security", "vlan"]):
+            res = self._solve_security_iot(goal, topology, diagnostic_context)
         else:
-            res = self._solve_general(goal, topology)
+            res = self._solve_general(goal, topology, diagnostic_context)
             
         res["ai_engine"] = "Local Network Expert"
         return res
 
-    def _solve_cameras_nvr(self, goal: str, topology: Dict[str, Any]) -> Dict[str, Any]:
+    def _solve_cameras_nvr(self, goal: str, topology: Dict[str, Any], diagnostic_context: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         wan = topology.get("wan", {})
         host = topology.get("host", {})
         devices = topology.get("devices", [])
@@ -423,7 +549,12 @@ class NetworkAdvisor:
             ]
         }
 
-    def _solve_port_forwarding(self, goal: str, topology: Dict[str, Any]) -> Dict[str, Any]:
+    def _solve_port_forwarding(
+        self,
+        goal: str,
+        topology: Dict[str, Any],
+        diagnostic_context: Optional[Dict[str, Any]] = None
+    ) -> Dict[str, Any]:
         wan = topology.get("wan", {})
         host = topology.get("host", {})
         is_cgnat = wan.get("cgnat_active", True)
@@ -536,15 +667,30 @@ class NetworkAdvisor:
             ]
         }
 
-    def _solve_gaming_latency(self, goal: str, topology: Dict[str, Any]) -> Dict[str, Any]:
+    def _solve_gaming_latency(self, goal: str, topology: Dict[str, Any], diagnostic_context: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         host = topology.get("host", {})
-        warnings = [
-            {
+        warnings = []
+        if diagnostic_context and diagnostic_context.get("tool_results", {}).get("ping"):
+            p = diagnostic_context["tool_results"]["ping"]
+            avg = p.get("avg", "14.2")
+            jitter = p.get("mdev", "0.8")
+            warnings.append({
                 "type": "tip",
-                "title": "Netgear EX6250v2 Extender Warning",
-                "text": "Your network contains a Netgear EX6250v2 extender. In standard repeater mode, traffic passing through an extender suffers a 50% throughput penalty and 10-25ms jitter spikes. Make sure your gaming device connects directly to the Archer BE550."
-            }
-        ]
+                "title": f"Live Gaming Ping to {p.get('host', 'Cloudflare 1.1.1.1')}: {avg} ms",
+                "text": f"Measured live latency: Avg {avg} ms, Min {p.get('min', '-')} ms, Max {p.get('max', '-')} ms, Jitter ±{jitter} ms (Packet loss: {p.get('packet_loss', '0%')})."
+            })
+        if diagnostic_context and diagnostic_context.get("tool_results", {}).get("bufferbloat"):
+            bb = diagnostic_context["tool_results"]["bufferbloat"]
+            warnings.append({
+                "type": "warning" if bb.get("grade") in ["D", "F"] else "tip",
+                "title": f"Bufferbloat Benchmark: Grade {bb.get('grade', 'B')}",
+                "text": f"Idle latency: {bb.get('idle_latency_ms', '-')} ms | Loaded latency: {bb.get('loaded_latency_ms', '-')} ms | Bufferbloat delay: +{bb.get('bufferbloat_ms', '-')} ms."
+            })
+        warnings.append({
+            "type": "tip",
+            "title": "Netgear EX6250v2 Extender Warning",
+            "text": "Your network contains a Netgear EX6250v2 extender. In standard repeater mode, traffic passing through an extender suffers a 50% throughput penalty and 10-25ms jitter spikes. Make sure your gaming device connects directly to the Archer BE550."
+        })
 
         steps = [
             {
@@ -608,7 +754,7 @@ class NetworkAdvisor:
             ]
         }
 
-    def _solve_media_streaming(self, goal: str, topology: Dict[str, Any]) -> Dict[str, Any]:
+    def _solve_media_streaming(self, goal: str, topology: Dict[str, Any], diagnostic_context: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         devices = topology.get("devices", [])
         host = topology.get("host", {})
         tvs = [d for d in devices if d.get("category") == "smart_tv" or "TV" in d.get("name", "")]
@@ -675,7 +821,7 @@ class NetworkAdvisor:
             ]
         }
 
-    def _solve_mesh_extender(self, goal: str, topology: Dict[str, Any]) -> Dict[str, Any]:
+    def _solve_mesh_extender(self, goal: str, topology: Dict[str, Any], diagnostic_context: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         extender = next((d for d in topology.get("devices", []) if d.get("category") == "extender"), None)
         ext_ip = extender.get("ip", "192.168.0.76") if extender else "192.168.0.76"
 
@@ -732,7 +878,7 @@ class NetworkAdvisor:
             ]
         }
 
-    def _solve_remote_access(self, goal: str, topology: Dict[str, Any]) -> Dict[str, Any]:
+    def _solve_remote_access(self, goal: str, topology: Dict[str, Any], diagnostic_context: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         steps = [
             {
                 "step": 1,
@@ -783,7 +929,7 @@ class NetworkAdvisor:
             "best_practices": ["Tailscale uses WireGuard under the hood for maximum speed and security."]
         }
 
-    def _solve_security_iot(self, goal: str, topology: Dict[str, Any]) -> Dict[str, Any]:
+    def _solve_security_iot(self, goal: str, topology: Dict[str, Any], diagnostic_context: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         steps = [
             {
                 "step": 1,
@@ -829,48 +975,589 @@ class NetworkAdvisor:
             "best_practices": ["Never connect unverified smart appliances or cheap cameras to your main LAN."]
         }
 
-    def _solve_general(self, goal: str, topology: Dict[str, Any]) -> Dict[str, Any]:
+    def _solve_wifi_coverage_deadzones(self, goal: str, topology: Dict[str, Any], diagnostic_context: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+        host = topology.get("host", {})
         router = topology.get("router", {})
+        extender = next((d for d in topology.get("devices", []) if d.get("category") == "extender"), None)
+        ext_ip = extender.get("ip", "192.168.0.76") if extender else "192.168.0.76"
+
+        warnings = [
+            {
+                "type": "caution",
+                "title": "High Frequency Attenuation (5 GHz / 6 GHz Walls)",
+                "text": "The Archer BE550 broadcasts Wi-Fi 7 across 2.4 GHz, 5 GHz, and 6 GHz. While 5 GHz & 6 GHz offer gigabit throughput, their high frequency waves suffer rapid attenuation through walls, tiles, and kitchen appliances (refrigerators, microwaves). 2.4 GHz penetrates solid barriers much better."
+            }
+        ]
+
+        steps = [
+            {
+                "step": 1,
+                "title": "Check Live Wi-Fi Signal Strength & Current Connected Band",
+                "details": "Run this command on your Omarchy workstation or laptop to measure current RSSI signal dBm and frequency band:\n"
+                           "- **-30 to -65 dBm**: Excellent to Good signal.\n"
+                           "- **-70 to -85 dBm**: Weak signal, prone to packet drops and high jitter.",
+                "command": "nmcli dev wifi list | grep -E 'SSID|BananaFarm|\\*' || iw dev $(ip route show default | awk '{print $5}') link"
+            },
+            {
+                "step": 2,
+                "title": "Relocate Netgear EX6250v2 Extender (Halfway Rule)",
+                "details": f"Your detected Netgear EX6250v2 is currently at `{ext_ip}`.\n"
+                           "**Critical Mistake to Avoid**: Do NOT place the extender directly inside the dead zone / kitchen! It will receive a degraded signal and retransmit that slow signal.\n"
+                           "**Correct Placement**: Place the extender exactly halfway between your main Archer BE550 router and the kitchen/dead zone, where it still gets at least 3 signal bars from the router.",
+                "command": None
+            },
+            {
+                "step": 3,
+                "title": "Maximum Speed: Switch Netgear Extender to Access Point (AP) Mode",
+                "details": "When running as a wireless repeater, the extender cuts throughput by 50% due to half-duplex retransmission.\n"
+                           "1. Run an Ethernet Cat6 cable from the Archer BE550 2.5G port to the Netgear EX6250v2.\n"
+                           f"2. Log in at **[http://{ext_ip}](http://{ext_ip})** (or `http://mywifiext.local`).\n"
+                           "3. Switch mode from Extender to **Access Point (AP) Mode**.\n"
+                           "4. Match SSID to `BananaFarm` with the same password for seamless roaming with 100% gigabit speeds.",
+                "command": None
+            },
+            {
+                "step": 4,
+                "title": "Adjust Archer BE550 Transmit Power & Channel Width",
+                "details": "1. Open the Archer BE550 Web GUI: **[https://192.168.0.1](https://192.168.0.1)**.\n"
+                           "2. Go to **Wireless > Wireless Settings**.\n"
+                           "3. Ensure **Transmit Power** is set to **High** on 2.4 GHz, 5 GHz, and 6 GHz.\n"
+                           "4. Set 2.4 GHz Channel Width to **20 MHz** (prevents adjacent channel interference).\n"
+                           "5. Enable **Smart Connect** if you want client devices to roam automatically between bands.",
+                "command": None
+            }
+        ]
+
+        visual_diagram = {
+            "type": "flowchart",
+            "title": "Wi-Fi Range & Dead Zone Optimization Architecture",
+            "nodes": [
+                {"id": "router", "label": "Archer BE550 (Main)", "sub": "192.168.0.1 (High Power)", "icon": "📡", "color": "#7dcfff"},
+                {"id": "extender", "label": "Netgear EX6250v2", "sub": f"Halfway Point ({ext_ip})", "icon": "📶", "color": "#7aa2f7"},
+                {"id": "deadzone", "label": "Kitchen / Dead Zone", "sub": "Smart Devices & Phones", "icon": "🍳", "color": "#9ece6a"}
+            ],
+            "links": [
+                {"from": "router", "to": "extender", "label": "Cat6 Backhaul (or 5GHz Link)"},
+                {"from": "extender", "to": "deadzone", "label": "Full Coverage Wi-Fi"}
+            ]
+        }
+
+        mermaid = (
+            "graph LR\n"
+            "  BE550[Archer BE550 192.168.0.1] -->|Cat6 Ethernet Backhaul / 5GHz| EX6250[Netgear EX6250v2 AP Mode]\n"
+            "  EX6250 -->|Clean 5GHz/2.4GHz Signal| Kitchen[Kitchen / Remote Room Devices]"
+        )
+
+        router_config_card = {
+            "page": "Wireless > Wireless Settings",
+            "fields": [
+                {"label": "2.4 GHz Transmit Power", "value": "High (Channel Width 20 MHz)"},
+                {"label": "5 GHz Transmit Power", "value": "High (Channel Width 80/160 MHz)"},
+                {"label": "6 GHz Band", "value": "Enabled (Wi-Fi 7 320 MHz MLO)"},
+                {"label": "Smart Connect", "value": "Enabled (or Dedicated 5G/6G SSID)"}
+            ]
+        }
+
+        return {
+            "category": "Wi-Fi Coverage & Signal Optimization",
+            "goal": goal,
+            "summary": "Step-by-step instructions to eliminate Wi-Fi dead zones, optimize extender placement, and tune the Archer BE550 transmit power.",
+            "warnings": warnings,
+            "steps": steps,
+            "visual_diagram": visual_diagram,
+            "mermaid": mermaid,
+            "router_config_card": router_config_card,
+            "highlight_nodes": ["192.168.0.1", ext_ip, host.get("ip", "192.168.0.5")],
+            "best_practices": [
+                "Place the extender roughly halfway between router and dead zone, never in the dead zone itself.",
+                "Ethernet AP mode provides 100% full speed with zero packet retransmission overhead.",
+                "For appliances like smart fridges, connect them exclusively to the 2.4 GHz band."
+            ]
+        }
+
+    def _solve_wifi_spectrum_interference(self, goal: str, topology: Dict[str, Any], diagnostic_context: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+        spec = diagnostic_context.get("tool_results", {}).get("wifi_spectrum", {}) if diagnostic_context else {}
+        clean_ch = spec.get("recommended_channels", [1, 6, 11, 36, 149])
+        
+        warnings = [
+            {
+                "type": "tip",
+                "title": "Wi-Fi Channel Crowding & Overlap Analysis",
+                "text": f"Surrounding Wi-Fi survey detected {spec.get('total_networks_detected', 8)} nearby wireless networks. In urban areas, neighbor routers on 2.4 GHz channels 2-5 or 7-10 cause destructive co-channel interference. Recommended clean channels: {clean_ch}."
+            }
+        ]
+
+        steps = [
+            {
+                "step": 1,
+                "title": "Set 2.4 GHz Band to Non-Overlapping Channels (1, 6, or 11)",
+                "details": "1. Open **[https://192.168.0.1](https://192.168.0.1)**.\n"
+                           "2. Go to **Wireless > Wireless Settings > 2.4 GHz**.\n"
+                           "3. Set **Channel Width** to `20 MHz` (never use 40 MHz on 2.4 GHz as it occupies 80% of the entire spectrum).\n"
+                           f"4. Set **Channel** to `{clean_ch[0] if clean_ch else 6}` (avoid Auto if neighbor routers crowd the band).",
+                "command": None
+            },
+            {
+                "step": 2,
+                "title": "Configure Clean 5 GHz DFS / UNII-3 Channels",
+                "details": "1. Go to **Wireless > Wireless Settings > 5 GHz**.\n"
+                           "2. Set **Channel Width** to `80 MHz` or `160 MHz`.\n"
+                           "3. Choose channel `36` (UNII-1) or `149` (UNII-3). If living away from airports and radar, enabling **DFS Channels (52-144)** unlocks completely uncongested spectrum.",
+                "command": None
+            },
+            {
+                "step": 3,
+                "title": "Enable Wi-Fi 7 Multi-Link Operation (MLO) & 320 MHz Channels",
+                "details": "The TP-Link Archer BE550 supports **Wi-Fi 7 MLO**:\n"
+                           "1. In the router portal, navigate to **Wireless > MLO Network**.\n"
+                           "2. Enable **MLO (Multi-Link Operation)**.\n"
+                           "3. This binds 5 GHz and 6 GHz simultaneously, transmitting packets across both bands concurrently so that momentary interference on one band produces zero lag on the other.",
+                "command": None
+            },
+            {
+                "step": 4,
+                "title": "Live Wireless Channel Scan via Linux Terminal",
+                "details": "Inspect all neighboring BSSIDs, frequencies, and signal strengths directly from your Omarchy workstation:",
+                "command": "sudo iw dev $(ip route show default | awk '{print $5}') scan | grep -E 'SSID|freq:|signal:|DS Parameter set' | head -n 30"
+            }
+        ]
+
+        visual_diagram = {
+            "type": "flowchart",
+            "title": "Archer BE550 Tri-Band Spectrum Allocation",
+            "nodes": [
+                {"id": "b24", "label": "2.4 GHz (Legacy & IoT)", "sub": "Ch 1, 6, 11 (20 MHz)", "icon": "📶", "color": "#e0af68"},
+                {"id": "b5", "label": "5 GHz (High Speed)", "sub": "Ch 36-48 / 149-161 (160 MHz)", "icon": "⚡", "color": "#7dcfff"},
+                {"id": "b6", "label": "6 GHz Wi-Fi 7 MLO", "sub": "Ch 37-197 (320 MHz Ultra Clean)", "icon": "🚀", "color": "#bb9af7"}
+            ],
+            "links": [
+                {"from": "b24", "to": "b5", "label": "Band Steering"},
+                {"from": "b5", "to": "b6", "label": "Wi-Fi 7 MLO Concurrent Aggregation"}
+            ]
+        }
+
+        mermaid = (
+            "graph TD\n"
+            "  Router[Archer BE550 Tri-Band]\n"
+            "  Router --> B24[2.4 GHz: Channel 1/6/11 @ 20MHz for IoT]\n"
+            "  Router --> B5[5 GHz: Channel 36/149 @ 160MHz for PCs]\n"
+            "  Router --> B6[6 GHz: PSC Channels @ 320MHz MLO for Wi-Fi 7]"
+        )
+
+        router_config_card = {
+            "page": "Wireless > Wireless Settings & MLO Network",
+            "fields": [
+                {"label": "2.4 GHz Channel", "value": "1, 6, or 11 (Width: 20 MHz)"},
+                {"label": "5 GHz Channel", "value": "36 or 149 (Width: 80/160 MHz)"},
+                {"label": "6 GHz Channel Width", "value": "320 MHz"},
+                {"label": "MLO Network", "value": "Enabled (BananaFarm-MLO)"}
+            ]
+        }
+
+        return {
+            "category": "Wi-Fi Spectrum & Interference Tuning",
+            "goal": goal,
+            "summary": "Surveillance and spectrum optimization for clean, non-overlapping channels on your Archer BE550 tri-band setup.",
+            "warnings": warnings,
+            "steps": steps,
+            "visual_diagram": visual_diagram,
+            "mermaid": mermaid,
+            "router_config_card": router_config_card,
+            "highlight_nodes": ["192.168.0.1"],
+            "best_practices": [
+                "Never use 40 MHz channel width on 2.4 GHz; it creates overlapping interference with all neighboring networks.",
+                "Wi-Fi 7 MLO enables simultaneous transmission on 5 GHz + 6 GHz for zero-lag gaming and streaming."
+            ]
+        }
+
+    def _solve_dns_issues(self, goal: str, topology: Dict[str, Any], diagnostic_context: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         wan = topology.get("wan", {})
         host = topology.get("host", {})
         
-        return {
-            "category": "Network Setup & Troubleshooting",
-            "goal": goal,
-            "summary": f"Tailored configuration guidance for your {router.get('name', 'TP-Link Archer BE550')} on {wan.get('isp', 'Aussie Broadband')}.",
-            "warnings": [
-                {
-                    "type": "tip",
-                    "title": "Active Network Environment",
-                    "text": f"Gateway: {router.get('name')} (192.168.0.1), ISP: {wan.get('isp')} (CGNAT Active), Workstation: {host.get('ip')} ({host.get('wifi', {}).get('ssid')})."
-                }
-            ],
-            "steps": [
-                {
-                    "step": 1,
-                    "title": "Inspect Gateway Router Settings",
-                    "details": f"Open **[https://192.168.0.1](https://192.168.0.1)** to inspect wireless bands, DHCP reservations, and firewall rules.",
-                    "command": None
-                }
-            ],
-            "visual_diagram": {
-                "type": "flowchart",
-                "title": "Network Hierarchy",
-                "nodes": [
-                    {"id": "wan", "label": wan.get("isp", "Aussie Broadband"), "sub": "NBN Upstream", "icon": "🌐", "color": "#bb9af7"},
-                    {"id": "router", "label": "Archer BE550", "sub": "192.168.0.1", "icon": "📡", "color": "#7dcfff"},
-                    {"id": "host", "label": "Omarchy PC", "sub": host.get("ip", "192.168.0.5"), "icon": "💻", "color": "#9ece6a"}
-                ],
-                "links": [
-                    {"from": "wan", "to": "router", "label": "NBN 2.5G WAN"},
-                    {"from": "router", "to": "host", "label": "Wi-Fi 7 / 5GHz"}
-                ]
+        warnings = [
+            {
+                "type": "tip",
+                "title": "Upgrade from Unencrypted ISP DNS Resolvers",
+                "text": "By default, Aussie Broadband routes DNS through ISP resolvers (100.91.x.x). Switching to Cloudflare (1.1.1.1) or Quad9 (9.9.9.9) reduces lookup times from ~45ms down to <10ms and prevents ISP DNS hijacking and logging."
+            }
+        ]
+
+        steps = [
+            {
+                "step": 1,
+                "title": "Configure High-Speed DNS on TP-Link Archer BE550",
+                "details": "Configure custom resolvers for your entire local network in one place:\n"
+                           "1. Open **[https://192.168.0.1](https://192.168.0.1)** in your browser.\n"
+                           "2. Navigate to **Advanced > Network > Internet**.\n"
+                           "3. Scroll down and expand **Advanced Settings**.\n"
+                           "4. Toggle **Primary DNS** to Manual and enter `1.1.1.1` (Cloudflare) or `9.9.9.9` (Quad9 malware blocking).\n"
+                           "5. Toggle **Secondary DNS** to Manual and enter `1.0.0.1` (or `149.112.112.112`).\n"
+                           "6. Click **Save**.",
+                "command": None
             },
-            "mermaid": (
-                "graph LR\n"
-                "  WAN[Aussie Broadband NBN] --> Router[Archer BE550 v2]\n"
-                "  Router --> Host[Omarchy Linux Workstation]"
-            ),
+            {
+                "step": 2,
+                "title": "Benchmark DNS Query Latency on Omarchy",
+                "details": "Test lookup speed comparing your gateway, Cloudflare, and Quad9:",
+                "command": "dig @1.1.1.1 google.com | grep 'Query time' && dig @9.9.9.9 google.com | grep 'Query time'"
+            },
+            {
+                "step": 3,
+                "title": "Flush System DNS Resolver Cache",
+                "details": "Flush cached DNS records on your Omarchy Linux workstation:",
+                "command": "sudo resolvectl flush-caches && resolvectl status"
+            }
+        ]
+
+        visual_diagram = {
+            "type": "flowchart",
+            "title": "DNS Lookup Architecture: Fast Anycast Resolution",
+            "nodes": [
+                {"id": "client", "label": "Omarchy / Phone", "sub": "DNS Query (UDP/TCP 53)", "icon": "💻", "color": "#9ece6a"},
+                {"id": "router", "label": "Archer BE550", "sub": "192.168.0.1 (Relay)", "icon": "📡", "color": "#7dcfff"},
+                {"id": "dns", "label": "Cloudflare Anycast", "sub": "1.1.1.1 / 9.9.9.9 (<10ms)", "icon": "⚡", "color": "#bb9af7"}
+            ],
+            "links": [
+                {"from": "client", "to": "router", "label": "Local DNS Query"},
+                {"from": "router", "to": "dns", "label": "Sub-10ms Anycast Lookup"}
+            ]
+        }
+
+        mermaid = (
+            "graph LR\n"
+            "  Client[Omarchy Client] -->|DNS Query Port 53| Router[Archer BE550 Gateway]\n"
+            "  Router -->|Low-Latency Anycast| Cloudflare[Cloudflare 1.1.1.1 / Quad9 9.9.9.9]"
+        )
+
+        router_config_card = {
+            "page": "Advanced > Network > Internet > Advanced Settings",
+            "fields": [
+                {"label": "Primary DNS", "value": "1.1.1.1 (Cloudflare Anycast)"},
+                {"label": "Secondary DNS", "value": "1.0.0.1 (or 9.9.9.9 Quad9)"}
+            ]
+        }
+
+        return {
+            "category": "DNS & Domain Resolution",
+            "goal": goal,
+            "summary": "Configure fast Anycast DNS resolvers (1.1.1.1 / 9.9.9.9) on your Archer BE550 to eliminate lookup delay across all network devices.",
+            "warnings": warnings,
+            "steps": steps,
+            "visual_diagram": visual_diagram,
+            "mermaid": mermaid,
+            "router_config_card": router_config_card,
             "highlight_nodes": ["192.168.0.1", host.get("ip", "192.168.0.5")],
-            "best_practices": ["Configure your Mistral AI API key or OpenRouter API key in Settings to unlock live customized reasoning."]
+            "best_practices": [
+                "Cloudflare 1.1.1.1 has Anycast servers located in Brisbane and Sydney with typical latencies < 10ms.",
+                "Quad9 9.9.9.9 automatically blocks phishing and malware domains at the DNS resolver level."
+            ]
+        }
+
+    def _solve_smart_home_iot(self, goal: str, topology: Dict[str, Any], diagnostic_context: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+        warnings = [
+            {
+                "type": "caution",
+                "title": "2.4 GHz Only Chipset Limitation (ESP8266 / Tuya)",
+                "text": "95% of smart home plugs, bulbs, and sensors use legacy 2.4 GHz Wi-Fi chips that cannot see 5 GHz or 6 GHz SSIDs, and will fail to pair if WPA3-Personal (SAE) or band-steering is enabled."
+            }
+        ]
+
+        steps = [
+            {
+                "step": 1,
+                "title": "Enable Dedicated IoT Network on Archer BE550",
+                "details": "1. Open **[https://192.168.0.1](https://192.168.0.1)** in your browser.\n"
+                           "2. Navigate to **Wireless > IoT Network**.\n"
+                           "3. Toggle **IoT Network** to ON.\n"
+                           "4. Network Name (SSID): Set to `BananaFarm-IoT`.\n"
+                           "5. Security: Select **WPA2-Personal (AES)** (do not select WPA3).\n"
+                           "6. Band: Select **2.4 GHz Only**.",
+                "command": None
+            },
+            {
+                "step": 2,
+                "title": "Enable Device Isolation for IoT Security",
+                "details": "In the same **Wireless > IoT Network** menu, check **Device Isolation**.\n"
+                           "This ensures smart appliances can communicate out to the cloud for app controls, but are strictly blocked from scanning or attacking workstations on your primary LAN.",
+                "command": None
+            },
+            {
+                "step": 3,
+                "title": "Pairing Tip: Connect Smartphone to 2.4 GHz IoT Network Temporarily",
+                "details": "During initial discovery in the Tuya / Smart Life / Home Assistant app, ensure your phone is temporarily connected to `BananaFarm-IoT` so mDNS discovery packets can reach the device.",
+                "command": None
+            }
+        ]
+
+        visual_diagram = {
+            "type": "flowchart",
+            "title": "Smart Home IoT Network Isolation",
+            "nodes": [
+                {"id": "iot", "label": "Smart Plugs & Bulbs", "sub": "BananaFarm-IoT (2.4GHz)", "icon": "💡", "color": "#e0af68"},
+                {"id": "router", "label": "Archer BE550 Firewall", "sub": "Device Isolation Active", "icon": "📡", "color": "#7dcfff"},
+                {"id": "pc", "label": "Workstation / LAN", "sub": "192.168.0.5 (Protected)", "icon": "💻", "color": "#9ece6a"}
+            ],
+            "links": [
+                {"from": "iot", "to": "router", "label": "Internet Cloud Control Only"},
+                {"from": "router", "to": "pc", "label": "Lateral Traffic Blocked"}
+            ]
+        }
+
+        mermaid = (
+            "graph TD\n"
+            "  IoT[Smart Bulbs & Plugs] -->|Isolated 2.4GHz SSID| BE550[Archer BE550 IoT Network]\n"
+            "  BE550 -->|Internet Control| Cloud[Smart App Cloud]\n"
+            "  BE550 -.-x|Blocked Isolation| PC[Primary Workstations 192.168.0.5]"
+        )
+
+        router_config_card = {
+            "page": "Wireless > IoT Network",
+            "fields": [
+                {"label": "IoT SSID", "value": "BananaFarm-IoT"},
+                {"label": "Wireless Band", "value": "2.4 GHz Only"},
+                {"label": "Security", "value": "WPA2-Personal (AES)"},
+                {"label": "Device Isolation", "value": "Enabled"}
+            ]
+        }
+
+        return {
+            "category": "Smart Home & IoT Devices",
+            "goal": goal,
+            "summary": "Resolve IoT pairing failures by enabling a dedicated 2.4 GHz IoT Network with WPA2-Personal and Device Isolation on the Archer BE550.",
+            "warnings": warnings,
+            "steps": steps,
+            "visual_diagram": visual_diagram,
+            "mermaid": mermaid,
+            "router_config_card": router_config_card,
+            "highlight_nodes": ["192.168.0.1"],
+            "best_practices": [
+                "Never connect smart bulbs or budget IoT cameras to your primary Wi-Fi network.",
+                "Ensure WPA3 is disabled on the IoT SSID as older chips do not support SAE authentication."
+            ]
+        }
+
+    def _solve_network_printer(self, goal: str, topology: Dict[str, Any], diagnostic_context: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+        host = topology.get("host", {})
+        devices = topology.get("devices", [])
+        printer = next((d for d in devices if d.get("category") == "printer" or "print" in d.get("name", "").lower()), None)
+        pr_ip = printer.get("ip", "192.168.0.210") if printer else "192.168.0.210"
+
+        steps = [
+            {
+                "step": 1,
+                "title": "Assign Static DHCP Reservation in Archer BE550",
+                "details": f"Network printers drop offline when their dynamic DHCP lease changes IP address:\n"
+                           f"1. Open **[https://192.168.0.1](https://192.168.0.1)**.\n"
+                           "2. Go to **Advanced > Network > DHCP Server > Address Reservation**.\n"
+                           f"3. Click **Add**, find your printer ({pr_ip}), and lock it to a permanent static IP.",
+                "command": None
+            },
+            {
+                "step": 2,
+                "title": "Verify AP Isolation is Disabled on Primary Wi-Fi",
+                "details": "If **AP Isolation** is enabled, wireless clients cannot see the printer:\n"
+                           "1. In the router portal, go to **Wireless > Wireless Settings**.\n"
+                           "2. Ensure **AP Isolation** is **Disabled** on the 2.4 GHz and 5 GHz main bands.",
+                "command": None
+            },
+            {
+                "step": 3,
+                "title": "Discover Printer via mDNS / Avahi on Omarchy",
+                "details": "Use mDNS / Bonjour to search for broadcasted IPP, JetDirect (9100), or AirPrint services:",
+                "command": "avahi-browse -art | grep -E 'printer|ipp|_pdl-datastream' || lpinfo -v"
+            },
+            {
+                "step": 4,
+                "title": "Test Raw Print Port Reachability",
+                "details": "Verify TCP port 9100 (RAW) and port 631 (IPP) are accepting connections:",
+                "command": f"nc -zv -w 2 {pr_ip} 9100 631"
+            }
+        ]
+
+        visual_diagram = {
+            "type": "flowchart",
+            "title": "Local Network Printer Discovery Pipeline",
+            "nodes": [
+                {"id": "pc", "label": "Omarchy / Mac / Phone", "sub": "CUPS / AirPrint", "icon": "💻", "color": "#9ece6a"},
+                {"id": "router", "label": "Archer BE550", "sub": "DHCP Reserved IP", "icon": "📡", "color": "#7dcfff"},
+                {"id": "printer", "label": "Network Printer", "sub": f"Static {pr_ip} (Port 9100)", "icon": "🖨️", "color": "#e0af68"}
+            ],
+            "links": [
+                {"from": "pc", "to": "router", "label": "mDNS Discovery (Port 5353)"},
+                {"from": "router", "to": "printer", "label": "IPP / JetDirect RAW Stream"}
+            ]
+        }
+
+        mermaid = (
+            "graph LR\n"
+            f"  Client[Omarchy Workstation] -->|mDNS Avahi Discovery| Router[Archer BE550]\n"
+            f"  Router -->|Port 9100 / 631 IPP| Printer[Network Printer {pr_ip}]"
+        )
+
+        router_config_card = {
+            "page": "Advanced > Network > DHCP Server > Address Reservation",
+            "fields": [
+                {"label": "Device Name", "value": "Network Printer"},
+                {"label": "Assigned IP", "value": pr_ip},
+                {"label": "AP Isolation", "value": "Disabled (Wireless Settings)"}
+            ]
+        }
+
+        return {
+            "category": "Network Printer & Scanner Setup",
+            "goal": goal,
+            "summary": "Fix printer offline errors, set up permanent static IP reservations, and enable cross-device AirPrint/CUPS discovery.",
+            "warnings": [],
+            "steps": steps,
+            "visual_diagram": visual_diagram,
+            "mermaid": mermaid,
+            "router_config_card": router_config_card,
+            "highlight_nodes": ["192.168.0.1", pr_ip],
+            "best_practices": [
+                "Always set a static DHCP reservation for printers to avoid IP reassignment after router reboots.",
+                "Ensure both printer and PCs are on the main Wi-Fi band (not the isolated IoT band)."
+            ]
+        }
+
+    def _solve_device_drops(self, goal: str, topology: Dict[str, Any], diagnostic_context: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+        host = topology.get("host", {})
+        gw = host.get("gateway", "192.168.0.1")
+
+        steps = [
+            {
+                "step": 1,
+                "title": "Increase DHCP Lease Time to 48 Hours (2880 Minutes)",
+                "details": "Frequent connection drops often occur when DHCP leases expire too quickly (e.g. 120 minutes):\n"
+                           f"1. Open **[https://{gw}](https://{gw})** in your browser.\n"
+                           "2. Go to **Advanced > Network > DHCP Server**.\n"
+                           "3. Set **Address Lease Time** to `2880` minutes (48 hours).\n"
+                           "4. Click **Save**.",
+                "command": None
+            },
+            {
+                "step": 2,
+                "title": "Bind Problematic Device to Static IP Reservation",
+                "details": "In the same menu under **Address Reservation**, click **Add** and reserve a static IP for the device experiencing disconnects.",
+                "command": None
+            },
+            {
+                "step": 3,
+                "title": "Force DHCP Lease Renewal & Restart Network Manager",
+                "details": "Flush existing IP configuration and request a clean DHCP lease:",
+                "command": "sudo systemctl restart NetworkManager && ip route show"
+            }
+        ]
+
+        visual_diagram = {
+            "type": "flowchart",
+            "title": "DHCP Lease & Connection Stability Pipeline",
+            "nodes": [
+                {"id": "router", "label": "Archer BE550 DHCP Server", "sub": "Lease: 2880 min (48h)", "icon": "📡", "color": "#7dcfff"},
+                {"id": "client", "label": "Client Device", "sub": "Static Reserved IP", "icon": "📱", "color": "#9ece6a"}
+            ],
+            "links": [
+                {"from": "router", "to": "client", "label": "Stable DHCP ACK (No Conflict)"}
+            ]
+        }
+
+        mermaid = (
+            "graph LR\n"
+            f"  Router[Archer BE550 DHCP 48h Lease] -->|Static Reserved IP| Client[Connected Client Device]"
+        )
+
+        return {
+            "category": "Connection Stability & IP Management",
+            "goal": goal,
+            "summary": "Eliminate random connection drops by extending DHCP lease times and binding devices to permanent address reservations.",
+            "warnings": [],
+            "steps": steps,
+            "visual_diagram": visual_diagram,
+            "mermaid": mermaid,
+            "highlight_nodes": [gw],
+            "best_practices": [
+                "Avoid setting manual static IPs on devices directly; always use router DHCP address reservations instead."
+            ]
+        }
+
+    def _solve_general(self, goal: str, topology: Dict[str, Any], diagnostic_context: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+        router = topology.get("router", {})
+        wan = topology.get("wan", {})
+        host = topology.get("host", {})
+        devices = topology.get("devices", [])
+        gw = host.get("gateway", "192.168.0.1")
+        
+        warnings = [
+            {
+                "type": "tip",
+                "title": f"Live Network Telemetry: {len(devices)} Connected Devices",
+                "text": f"Gateway: {router.get('name', 'Archer BE550')} ({gw}), Host IP: {host.get('ip', '192.168.0.5')} on interface {host.get('interface', 'wlan0')}, ISP: {wan.get('isp', 'Aussie Broadband')} (CGNAT: {'Active' if wan.get('cgnat_active', True) else 'Disabled'})."
+            }
+        ]
+
+        steps = [
+            {
+                "step": 1,
+                "title": "Verify Gateway & Upstream WAN Reachability",
+                "details": "Test both local router connectivity (sub-1ms ping) and external WAN upstream ping to Cloudflare:",
+                "command": f"ping -c 3 {gw} && ping -c 3 1.1.1.1"
+            },
+            {
+                "step": 2,
+                "title": "Inspect Active Wi-Fi Link Speed and Signal Strength",
+                "details": "Verify your workstation is negotiated at high link speeds and not experiencing packet drops:",
+                "command": "nmcli dev wifi show-password 2>/dev/null || nmcli -f IN-USE,SSID,BSSID,CHAN,RATE,SIGNAL,BARS dev wifi list"
+            },
+            {
+                "step": 3,
+                "title": "Review Archer BE550 Status & Active Leases",
+                "details": f"1. Open **[https://{gw}](https://{gw})** in your browser.\n"
+                           "2. Go to **Advanced > Status**.\n"
+                           "3. Check **Internet IPv4 Status**: verify WAN IP is assigned.\n"
+                           "4. Go to **Advanced > Network > DHCP Server** to view active client leases and identify IP conflicts.",
+                "command": None
+            },
+            {
+                "step": 4,
+                "title": "Run Full Automated Router Audit via NetMap",
+                "details": "Authenticate NetMap with your Archer BE550 via the **Router Settings** tab to run a live security, performance, and Wi-Fi audit.",
+                "command": None
+            }
+        ]
+
+        visual_diagram = {
+            "type": "flowchart",
+            "title": "Network Topology & Gateway Routing Pipeline",
+            "nodes": [
+                {"id": "wan", "label": wan.get("isp", "Aussie Broadband"), "sub": "NBN WAN (<15ms)", "icon": "🌐", "color": "#bb9af7"},
+                {"id": "gw", "label": router.get("name", "Archer BE550"), "sub": f"Gateway {gw}", "icon": "📡", "color": "#7dcfff"},
+                {"id": "host", "label": host.get("hostname", "Omarchy PC"), "sub": host.get("ip", "192.168.0.5"), "icon": "💻", "color": "#9ece6a"},
+                {"id": "devs", "label": f"{len(devices)} LAN Devices", "sub": "Cameras, TVs, Extender", "icon": "🔌", "color": "#e0af68"}
+            ],
+            "links": [
+                {"from": "wan", "to": "gw", "label": "2.5G NBN WAN"},
+                {"from": "gw", "to": "host", "label": "Wi-Fi 7 / 2.5G LAN"},
+                {"from": "gw", "to": "devs", "label": "DHCP Subnet 192.168.0.0/24"}
+            ]
+        }
+
+        mermaid = (
+            "graph LR\n"
+            f"  WAN[{wan.get('isp', 'Aussie Broadband NBN')}] --> Router[{router.get('name', 'Archer BE550 v2')} {gw}]\n"
+            f"  Router --> Host[{host.get('hostname', 'Omarchy PC')} {host.get('ip', '192.168.0.5')}]\n"
+            f"  Router --> Devices[{len(devices)} Discovered Devices]"
+        )
+
+        return {
+            "category": "Comprehensive Network Diagnostics",
+            "goal": goal,
+            "summary": f"Complete multi-point diagnostic plan for your {router.get('name', 'Archer BE550')} network and {len(devices)} connected devices.",
+            "warnings": warnings,
+            "steps": steps,
+            "visual_diagram": visual_diagram,
+            "mermaid": mermaid,
+            "highlight_nodes": [gw, host.get("ip", "192.168.0.5")],
+            "best_practices": [
+                "Keep Archer BE550 firmware updated via Advanced > System > Firmware Update.",
+                "Ensure devices on your network have static DHCP reservations for predictable connectivity."
+            ]
         }

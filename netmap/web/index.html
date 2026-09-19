@@ -861,6 +861,10 @@
               <span class="toggle-icon">🌪️</span>
               <span class="toggle-name">Mistral AI</span>
             </button>
+            <button class="provider-toggle-btn" data-provider="gemini">
+              <span class="toggle-icon">✨</span>
+              <span class="toggle-name">Google Gemini</span>
+            </button>
             <button class="provider-toggle-btn" data-provider="openrouter">
               <span class="toggle-icon">🌐</span>
               <span class="toggle-name">OpenRouter</span>
@@ -885,11 +889,25 @@
             </div>
           </div>
 
-          <!-- 2. OpenRouter Configuration -->
+          <!-- 2. Google Gemini Configuration -->
+          <div class="provider-panel" id="panel-gemini">
+            <div class="form-group">
+              <label for="gemini-key">Google Gemini API Key</label>
+              <p class="form-hint">Enter your Google Gemini API key from <a href="https://aistudio.google.com" target="_blank" rel="noopener">aistudio.google.com</a> to access high-speed reasoning (Gemini 2.0 Flash, Gemini 1.5 Flash).</p>
+              <input type="password" id="gemini-key" placeholder="AIzaSy..." />
+            </div>
+
+            <div class="form-group">
+              <label for="gemini-model">Gemini Model Selection</label>
+              <select id="gemini-model" class="form-select"></select>
+            </div>
+          </div>
+
+          <!-- 3. OpenRouter Configuration -->
           <div class="provider-panel" id="panel-openrouter">
             <div class="form-group">
               <label for="openrouter-key">OpenRouter API Key</label>
-              <p class="form-hint">Enter your OpenRouter key from <a href="https://openrouter.ai" target="_blank" rel="noopener">openrouter.ai</a> to access free and open-source models (Qwen 2.5 Coder free, DeepSeek R1 free, Llama 3.3 free).</p>
+              <p class="form-hint">Enter your OpenRouter key from <a href="https://openrouter.ai" target="_blank" rel="noopener">openrouter.ai</a> to access free and open-source models (DeepSeek, Qwen, Nemotron, Llama).</p>
               <input type="password" id="openrouter-key" placeholder="sk-or-v1-..." />
             </div>
 
@@ -899,7 +917,7 @@
             </div>
           </div>
 
-          <!-- 3. Local Expert Configuration -->
+          <!-- 4. Local Expert Configuration -->
           <div class="provider-panel" id="panel-local">
             <div class="alert-box tip">
               <div class="alert-title">Built-In Offline Expert Active</div>

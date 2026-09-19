@@ -259,7 +259,8 @@ class AgentOrchestrator:
         self,
         goal: str,
         topology: Dict[str, Any],
-        requested_agent: Optional[str] = None
+        requested_agent: Optional[str] = None,
+        conversation_history: Optional[List[Dict[str, Any]]] = None
     ) -> Dict[str, Any]:
         """
         Execute multi-agent workflow:
@@ -288,73 +289,101 @@ class AgentOrchestrator:
         doc_topic = "be550"
         tool_results_summary = {}
 
+        # Wi-Fi Spectrum & Interference
+        if any(w in goal_lower for w in ["wifi", "wi-fi", "spectrum", "channel", "interference", "slow", "kitchen", "dead zone", "coverage", "congestion", "signal"]):
+            spec_res = tool_wifi_spectrum()
+            tool_results_summary["wifi_spectrum"] = spec_res
+            trace.append({
+                "step": len(trace) + 1,
+                "agent": lead_agent["name"],
+                "icon": "📡",
+                "thought": "Surveying local Wi-Fi channels across 2.4 GHz, 5 GHz, and 6 GHz to detect frequency overlap.",
+                "tool": "tool_wifi_spectrum",
+                "args": {},
+                "result": f"Surveyed spectrum: {spec_res.get('total_networks_detected', 0)} surrounding networks detected. Recommended clean channels: {spec_res.get('recommended_channels', [1, 6, 11, 36, 149])}."
+            })
+
+        # Latency, Gaming & Bufferbloat
+        if lead_agent_id == "performance" or any(w in goal_lower for w in ["ping", "lag", "latency", "bufferbloat", "gaming", "delay", "jitter", "speed", "qos"]):
+            doc_topic = "gaming"
+            ping_res = tool_ping("1.1.1.1")
+            tool_results_summary["ping"] = ping_res
+            trace.append({
+                "step": len(trace) + 1,
+                "agent": lead_agent["name"],
+                "icon": "⚡",
+                "thought": "Testing WAN upstream latency and jitter to Cloudflare 1.1.1.1 Anycast.",
+                "tool": "tool_ping",
+                "args": {"host": "1.1.1.1"},
+                "result": f"Cloudflare 1.1.1.1 reachable: {ping_res.get('avg', '14.2')} ms (Jitter: ±{ping_res.get('mdev', '0.8')} ms, Loss: {ping_res.get('packet_loss', '0%')})."
+            })
+            if "bufferbloat" in goal_lower or "lag spike" in goal_lower or "qos" in goal_lower:
+                bb_res = tool_bufferbloat("1.1.1.1")
+                tool_results_summary["bufferbloat"] = bb_res
+                trace.append({
+                    "step": len(trace) + 1,
+                    "agent": lead_agent["name"],
+                    "icon": "📈",
+                    "thought": "Benchmarking loaded latency vs idle ping to evaluate Archer BE550 bufferbloat.",
+                    "tool": "tool_bufferbloat",
+                    "args": {"target": "1.1.1.1"},
+                    "result": f"Bufferbloat grade: {bb_res.get('grade', 'B')} (Idle: {bb_res.get('idle_latency_ms', '-')} ms, Loaded: {bb_res.get('loaded_latency_ms', '-')} ms)."
+                })
+
+        # Surveillance & Cameras
         if lead_agent_id == "surveillance" or any(w in goal_lower for w in ["camera", "nvr", "cctv", "rtsp", "onvif"]):
             doc_topic = "cctv"
             cams = [d for d in topology.get("devices", []) if d.get("category") in ["camera", "nvr"]]
             cam_ip = cams[0]["ip"] if cams else "192.168.0.136"
             
-            # Run portscan tool
             scan_res = tool_portscan(cam_ip, [554, 8554, 8000, 37777, 8899])
             tool_results_summary["portscan"] = scan_res
             trace.append({
-                "step": 2,
+                "step": len(trace) + 1,
                 "agent": lead_agent["name"],
                 "icon": lead_agent["icon"],
-                "thought": f"Probing active camera services on {cam_ip} to verify RTSP, ONVIF, and NVR ports.",
+                "thought": f"Probing active camera services on {cam_ip} to verify RTSP (554), ONVIF, and NVR ports.",
                 "tool": "tool_portscan",
                 "args": {"ip": cam_ip, "ports": [554, 8554, 8000, 37777, 8899]},
-                "result": f"Port scan completed. Open ports on {cam_ip}: {scan_res.get('open_ports', [])}"
+                "result": f"Port scan completed on {cam_ip}. Open listening ports: {scan_res.get('open_ports', [])}."
             })
 
-        elif lead_agent_id == "security" or any(w in goal_lower for w in ["port forward", "cgnat", "server", "minecraft", "remote"]):
+        # Security & CGNAT & Port Forwarding
+        elif lead_agent_id == "security" or any(w in goal_lower for w in ["port forward", "cgnat", "server", "minecraft", "remote", "vpn"]):
             doc_topic = "cgnat"
-            # Ping gateway & check CGNAT status
             gw_ip = topology.get("host", {}).get("gateway", "192.168.0.1")
             ping_res = tool_ping(gw_ip)
-            tool_results_summary["ping"] = ping_res
+            tool_results_summary["ping_gw"] = ping_res
             trace.append({
-                "step": 2,
+                "step": len(trace) + 1,
                 "agent": lead_agent["name"],
                 "icon": lead_agent["icon"],
                 "thought": f"Testing gateway reachability on {gw_ip} and evaluating Aussie Broadband CGNAT status.",
                 "tool": "tool_ping",
                 "args": {"host": gw_ip},
-                "result": f"Gateway reachable: {ping_res.get('reachable')} (Latency: {ping_res.get('avg', '0.4')} ms)"
+                "result": f"Gateway reachable: {ping_res.get('reachable')} (Latency: {ping_res.get('avg', '0.4')} ms)."
             })
 
-        elif lead_agent_id == "performance" or any(w in goal_lower for w in ["ping", "lag", "latency", "bufferbloat", "gaming", "qos"]):
-            doc_topic = "gaming"
-            ping_res = tool_ping("1.1.1.1")
-            tool_results_summary["ping"] = ping_res
-            trace.append({
-                "step": 2,
-                "agent": lead_agent["name"],
-                "icon": lead_agent["icon"],
-                "thought": "Testing upstream jitter and latency to Cloudflare 1.1.1.1 DNS.",
-                "tool": "tool_ping",
-                "args": {"host": "1.1.1.1"},
-                "result": f"Cloudflare reachable: {ping_res.get('avg', '14.2')} ms (Jitter: ±{ping_res.get('mdev', '0.8')} ms)"
-            })
-
+        # Hardware & Extender
         elif lead_agent_id == "hardware" or "extender" in goal_lower or "ex6250" in goal_lower:
             doc_topic = "extender"
             ext = next((d for d in topology.get("devices", []) if d.get("category") == "extender"), None)
             ext_ip = ext.get("ip") if ext else "192.168.0.76"
             ping_res = tool_ping(ext_ip)
             trace.append({
-                "step": 2,
+                "step": len(trace) + 1,
                 "agent": lead_agent["name"],
                 "icon": lead_agent["icon"],
                 "thought": f"Probing Netgear EX6250v2 extender on {ext_ip} to assess repeater link latency.",
                 "tool": "tool_ping",
                 "args": {"host": ext_ip},
-                "result": f"Extender responded: {ping_res.get('avg', '2.5')} ms"
+                "result": f"Extender responded: {ping_res.get('avg', '2.5')} ms."
             })
 
         # Step 3: Knowledge Base Document Retrieval
         doc_result = tool_read_docs(doc_topic)
         trace.append({
-            "step": 3,
+            "step": len(trace) + 1,
             "agent": lead_agent["name"],
             "icon": lead_agent["icon"],
             "thought": f"Consulting NetMap Knowledge Base article '{doc_result.get('title')}' for exact menu click-paths and engineering standards.",
@@ -363,17 +392,24 @@ class AgentOrchestrator:
             "result": f"Loaded '{doc_result.get('filename')}' ({len(doc_result.get('content', ''))} bytes)."
         })
 
-        # Step 4: LLM or Local Synthesis
-        # Call advisor to formulate visual diagrams and text
-        solution = self.advisor.solve(goal, topology)
+        # Step 4: LLM or Local Synthesis with Live Diagnostic Telemetry
+        diagnostic_context = {
+            "tool_results": tool_results_summary,
+            "retrieved_docs": doc_result,
+            "lead_agent": lead_agent,
+            "conversation_history": conversation_history
+        }
+        solution = self.advisor.solve(goal, topology, diagnostic_context=diagnostic_context)
 
-        # Step 5: Construct Interactive Action Buttons
+        # Step 5: Construct Interactive Action Buttons & Quick Follow-ups
         action_items = self._generate_action_items(lead_agent_id, goal_lower, topology, solution)
+        quick_followups = self._generate_quick_followups(lead_agent_id, goal_lower, topology)
 
         # Attach agent trace and metadata
         solution["agent_trace"] = trace
         solution["lead_agent"] = lead_agent
         solution["action_items"] = action_items
+        solution["quick_followups"] = quick_followups
 
         return solution
 
@@ -386,7 +422,7 @@ class AgentOrchestrator:
             return "performance"
         elif any(w in goal_lower for w in ["tv", "stream", "jellyfin", "plex", "chromecast", "movies"]):
             return "media"
-        elif any(w in goal_lower for w in ["extender", "mesh", "ex6250", "be550", "router setting", "dhcp"]):
+        elif any(w in goal_lower for w in ["extender", "mesh", "ex6250", "be550", "router setting", "dhcp", "channel", "spectrum"]):
             return "hardware"
         return "orchestrator"
 
@@ -401,7 +437,7 @@ class AgentOrchestrator:
         host_ip = topology.get("host", {}).get("ip", "192.168.0.5")
         gw_ip = topology.get("host", {}).get("gateway", "192.168.0.1")
 
-        # Ping Gateway
+        # 1. Ping Gateway
         actions.append({
             "id": "act-ping-gw",
             "label": f"Ping Gateway ({gw_ip})",
@@ -410,7 +446,34 @@ class AgentOrchestrator:
             "params": {"host": gw_ip}
         })
 
-        # Camera RTSP test if camera topic
+        # 2. Wi-Fi Spectrum Survey action if wireless issue
+        if any(w in goal_lower for w in ["wifi", "wi-fi", "slow", "kitchen", "dead zone", "spectrum", "channel", "interference"]):
+            actions.append({
+                "id": "act-survey-spectrum",
+                "label": "Survey Wi-Fi Channels & Spectrum",
+                "icon": "📶",
+                "type": "tool_wifi_spectrum",
+                "params": {}
+            })
+
+        # 3. Bufferbloat & Latency action if latency/gaming
+        if lead_agent_id == "performance" or any(w in goal_lower for w in ["ping", "lag", "latency", "bufferbloat", "gaming", "speed"]):
+            actions.append({
+                "id": "act-ping-dns",
+                "label": "Benchmark Cloudflare 1.1.1.1 Jitter",
+                "icon": "⚡",
+                "type": "tool_ping",
+                "params": {"host": "1.1.1.1"}
+            })
+            actions.append({
+                "id": "act-test-bufferbloat",
+                "label": "Run Bufferbloat Benchmark Test",
+                "icon": "📈",
+                "type": "tool_bufferbloat",
+                "params": {"target": "1.1.1.1"}
+            })
+
+        # 4. Camera RTSP test if camera topic
         if lead_agent_id == "surveillance" or "camera" in goal_lower:
             cams = [d for d in topology.get("devices", []) if d.get("category") in ["camera", "nvr"]]
             cam_ip = cams[0]["ip"] if cams else "192.168.0.136"
@@ -422,17 +485,7 @@ class AgentOrchestrator:
                 "params": {"ip": cam_ip, "ports": [554, 8554, 8000, 37777, 8899]}
             })
 
-        # Gaming ping test
-        if lead_agent_id == "performance" or "gaming" in goal_lower:
-            actions.append({
-                "id": "act-ping-dns",
-                "label": "Benchmark Cloudflare 1.1.1.1 Jitter",
-                "icon": "⚡",
-                "type": "tool_ping",
-                "params": {"host": "1.1.1.1"}
-            })
-
-        # Documentation lookup action
+        # 5. Documentation lookup action
         doc_topic = "be550"
         if lead_agent_id == "surveillance": doc_topic = "cctv"
         elif lead_agent_id == "security": doc_topic = "cgnat"
@@ -449,6 +502,42 @@ class AgentOrchestrator:
 
         return actions
 
+    def _generate_quick_followups(
+        self,
+        lead_agent_id: str,
+        goal_lower: str,
+        topology: Dict[str, Any]
+    ) -> List[str]:
+        """Generate smart, context-aware clickable follow-up questions for the user."""
+        followups = []
+
+        if any(w in goal_lower for w in ["wifi", "wi-fi", "coverage", "dead zone", "kitchen", "extender", "signal", "range"]):
+            followups.append("How do I configure the Netgear EX6250v2 into wired Access Point mode?")
+            followups.append("Which 2.4 GHz and 5 GHz channels have the lowest interference?")
+            followups.append("How do I enable 320 MHz MLO on the Archer BE550?")
+        elif any(w in goal_lower for w in ["camera", "nvr", "cctv", "rtsp", "surveillance", "tvpc"]):
+            followups.append("How do I isolate my cameras on the Archer BE550 IoT network?")
+            followups.append("How do I view RTSP streams remotely without port forwarding?")
+            followups.append("How do I reserve a static DHCP IP for my camera?")
+        elif any(w in goal_lower for w in ["ping", "lag", "latency", "bufferbloat", "jitter", "gaming", "packet loss"]):
+            followups.append("How do I set up QoS priority on the Archer BE550 for my gaming PC?")
+            followups.append("Which DNS servers provide the lowest latency in Australia?")
+            followups.append("How do I fix bufferbloat lag during heavy uploads?")
+        elif any(w in goal_lower for w in ["port forward", "cgnat", "server", "minecraft", "palworld", "host"]):
+            followups.append("How do I request Aussie Broadband to remove CGNAT for port forwarding?")
+            followups.append("How do I set up Tailscale subnet routing instead of opening ports?")
+            followups.append("Where is the Virtual Servers / Port Forwarding menu on the Archer BE550?")
+        elif any(w in goal_lower for w in ["media", "jellyfin", "plex", "tv", "stream", "chromecast"]):
+            followups.append("What firewall ports does Chromecast / Google Cast require?")
+            followups.append("How do I disable AP isolation so phones can cast to TVs?")
+            followups.append("What video encoding is best for smooth streaming over Wi-Fi?")
+        else:
+            followups.append("What diagnostics can I run to test gateway packet loss?")
+            followups.append("How do I reserve DHCP static IPs on the Archer BE550?")
+            followups.append("What are the recommended Wi-Fi 7 security settings?")
+
+        return followups[:3]
+
     def chat_multi_turn(
         self,
         session_id: str,
@@ -464,7 +553,7 @@ class AgentOrchestrator:
         history.append({"role": "user", "content": message})
         
         # Run agentic workflow
-        result = self.run_agentic_workflow(message, topology, requested_agent=agent_id)
+        result = self.run_agentic_workflow(message, topology, requested_agent=agent_id, conversation_history=history)
         
         history.append({
             "role": "assistant",

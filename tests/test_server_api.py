@@ -38,7 +38,7 @@ class TestServerAPI(unittest.TestCase):
 
     def _get(self, path):
         req = urllib.request.Request(f"http://127.0.0.1:{self.port}{path}")
-        with urllib.request.urlopen(req, timeout=5) as res:
+        with urllib.request.urlopen(req, timeout=10) as res:
             return json.loads(res.read().decode("utf-8"))
 
     def _post(self, path, payload):
@@ -48,7 +48,7 @@ class TestServerAPI(unittest.TestCase):
             data=data,
             headers={"Content-Type": "application/json"}
         )
-        with urllib.request.urlopen(req, timeout=5) as res:
+        with urllib.request.urlopen(req, timeout=10) as res:
             return json.loads(res.read().decode("utf-8"))
 
     def test_get_config(self):

@@ -28,6 +28,7 @@ from netmap.advisor import (
     NetworkAdvisor,
     RECOMMENDED_FREE_MODELS,
     RECOMMENDED_MISTRAL_MODELS,
+    RECOMMENDED_GEMINI_MODELS,
     load_config,
     save_config
 )
@@ -405,9 +406,14 @@ class NetMapHandler(http.server.SimpleHTTPRequestHandler):
         or_key = cfg.get("openrouter_api_key", "")
         or_masked = (or_key[:6] + "..." + or_key[-4:]) if len(or_key) > 10 else or_key
         
+        g_key = cfg.get("gemini_api_key", "")
+        g_masked = (g_key[:4] + "..." + g_key[-4:]) if len(g_key) > 8 else g_key
+        
         provider = cfg.get("ai_provider")
         if not provider:
-            if m_key:
+            if g_key:
+                provider = "gemini"
+            elif m_key:
                 provider = "mistral"
             elif or_key:
                 provider = "openrouter"
@@ -423,13 +429,18 @@ class NetMapHandler(http.server.SimpleHTTPRequestHandler):
             "openrouter_has_key": bool(or_key),
             "openrouter_masked_key": or_masked,
             "openrouter_raw_key": or_key,
-            "openrouter_model": cfg.get("openrouter_model", "qwen/qwen-2.5-coder-32b-instruct:free")
+            "openrouter_model": cfg.get("openrouter_model", "deepseek/deepseek-v4-flash-0731:free"),
+            "gemini_has_key": bool(g_key),
+            "gemini_masked_key": g_masked,
+            "gemini_raw_key": g_key,
+            "gemini_model": cfg.get("gemini_model", "gemini-2.0-flash")
         })
 
     def handle_get_models(self):
         self._send_json({
             "mistral": RECOMMENDED_MISTRAL_MODELS,
-            "openrouter": RECOMMENDED_FREE_MODELS
+            "openrouter": RECOMMENDED_FREE_MODELS,
+            "gemini": RECOMMENDED_GEMINI_MODELS
         })
 
     def handle_post_scan(self):
@@ -654,13 +665,17 @@ class NetMapHandler(http.server.SimpleHTTPRequestHandler):
         mistral_model = data.get("mistral_model")
         openrouter_key = data.get("openrouter_api_key")
         openrouter_model = data.get("openrouter_model")
+        gemini_key = data.get("gemini_api_key")
+        gemini_model = data.get("gemini_model")
         
         STATE.advisor.set_config(
             ai_provider=ai_provider,
             mistral_key=mistral_key,
             mistral_model=mistral_model,
             openrouter_key=openrouter_key,
-            openrouter_model=openrouter_model
+            openrouter_model=openrouter_model,
+            gemini_key=gemini_key,
+            gemini_model=gemini_model
         )
         self._send_json({"success": True})
 

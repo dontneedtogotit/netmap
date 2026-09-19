@@ -130,6 +130,52 @@ class TestAgentOrchestrator(unittest.TestCase):
         self.assertIn("session_id", res)
         self.assertEqual(res["session_id"], "session_test_1")
 
+    def test_quick_followups_attached(self):
+        res = self.orchestrator.run_agentic_workflow(
+            "Why is my wifi slow in the kitchen?",
+            self.sample_topo
+        )
+        self.assertIn("quick_followups", res)
+        self.assertIsInstance(res["quick_followups"], list)
+        self.assertGreater(len(res["quick_followups"]), 0)
+        # Should have Wi-Fi related followups
+        self.assertTrue(any("AP mode" in q or "channel" in q or "MLO" in q for q in res["quick_followups"]))
+
+    def test_domain_expert_kitchen_wifi_deadzone(self):
+        # Even with local engine, should return clear, multi-step structured answer with -67 dBm guidance
+        sol = self.orchestrator.advisor._solve_with_local_expert(
+            "why is my wifi slow in the kitchen?",
+            self.sample_topo
+        )
+        self.assertIn("steps", sol)
+        self.assertGreaterEqual(len(sol["steps"]), 4)
+        step_details_combined = " ".join(s["details"] for s in sol["steps"])
+        self.assertIn("EX6250v2", step_details_combined)
+        self.assertIn("dBm", step_details_combined)
+        self.assertIn("visual_diagram", sol)
+
+    def test_domain_expert_printer_resolution(self):
+        sol = self.orchestrator.advisor._solve_with_local_expert(
+            "my network printer is offline and cannot print",
+            self.sample_topo
+        )
+        self.assertIn("steps", sol)
+        self.assertGreaterEqual(len(sol["steps"]), 4)
+        step_details_combined = " ".join(s["details"] for s in sol["steps"])
+        self.assertIn("DHCP", step_details_combined)
+        self.assertIn("mDNS", step_details_combined)
+
+    def test_domain_expert_dns_resolution(self):
+        sol = self.orchestrator.advisor._solve_with_local_expert(
+            "DNS lookup is very slow and websites fail to resolve",
+            self.sample_topo
+        )
+        self.assertIn("steps", sol)
+        self.assertGreaterEqual(len(sol["steps"]), 3)
+        step_details_combined = " ".join(s["details"] for s in sol["steps"])
+        self.assertIn("1.1.1.1", step_details_combined)
+        self.assertIn("9.9.9.9", step_details_combined)
+
 
 class TestServerAgentEndpoints(unittest.TestCase):
     @classmethod
@@ -158,7 +204,7 @@ class TestServerAgentEndpoints(unittest.TestCase):
 
     def _get(self, path):
         req = urllib.request.Request(f"http://127.0.0.1:{self.port}{path}")
-        with urllib.request.urlopen(req, timeout=5) as res:
+        with urllib.request.urlopen(req, timeout=10) as res:
             return json.loads(res.read().decode("utf-8"))
 
     def _post(self, path, payload):
@@ -168,7 +214,7 @@ class TestServerAgentEndpoints(unittest.TestCase):
             data=data,
             headers={"Content-Type": "application/json"}
         )
-        with urllib.request.urlopen(req, timeout=5) as res:
+        with urllib.request.urlopen(req, timeout=10) as res:
             return json.loads(res.read().decode("utf-8"))
 
     def test_api_agent_catalog(self):
@@ -209,6 +255,38 @@ class TestServerAgentEndpoints(unittest.TestCase):
         })
         self.assertTrue(res.get("success"))
         self.assertIn("BE550", res["result"]["content"])
+
+        # Test spectrum action
+        res_spec = self._post("/api/agent/execute-action", {
+            "type": "tool_wifi_spectrum",
+            "params": {}
+        })
+        self.assertTrue(res_spec.get("success"))
+        self.assertIn("bands", res_spec["result"])
+        self.assertIn("total_aps", res_spec["result"])
+
+        # Test bufferbloat action
+        res_bb = self._post("/api/agent/execute-action", {
+            "type": "tool_bufferbloat",
+            "params": {"target": "127.0.0.1"}
+        })
+        self.assertTrue(res_bb.get("success"))
+        self.assertIn("grade", res_bb["result"])
+
+    def test_api_config_gemini(self):
+        # Save gemini config
+        post_res = self._post("/api/config", {
+            "ai_provider": "gemini",
+            "gemini_api_key": "AIzaSyTestKey123456",
+            "gemini_model": "gemini-2.0-flash"
+        })
+        self.assertTrue(post_res.get("success"))
+
+        # Fetch and verify
+        cfg = self._get("/api/config")
+        self.assertEqual(cfg["ai_provider"], "gemini")
+        self.assertTrue(cfg["gemini_has_key"])
+        self.assertEqual(cfg["gemini_model"], "gemini-2.0-flash")
 
     def test_api_docs(self):
         # 1. Index

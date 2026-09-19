@@ -22,7 +22,8 @@ let state = {
   },
   models: {
     mistral: [],
-    openrouter: []
+    openrouter: [],
+    gemini: []
   },
   config: {
     ai_provider: 'mistral',
@@ -31,8 +32,12 @@ let state = {
     mistral_model: 'mistral-small-latest',
     openrouter_has_key: false,
     openrouter_raw_key: '',
-    openrouter_model: 'qwen/qwen-2.5-coder-32b-instruct:free'
+    openrouter_model: 'deepseek/deepseek-v4-flash-0731:free',
+    gemini_has_key: false,
+    gemini_raw_key: '',
+    gemini_model: 'gemini-2.0-flash'
   },
+  agentChatSessionId: null,
   profiles: [],
   activeProfileId: null,
   viewingProfileId: null,
@@ -185,7 +190,13 @@ function updateEngineBadge() {
 
   const provider = state.config.ai_provider || 'local';
 
-  if (provider === 'mistral' && state.config.mistral_has_key) {
+  if (provider === 'gemini' && state.config.gemini_has_key) {
+    badge.textContent = `Gemini (${state.config.gemini_model || '2.0-flash'})`;
+    label.textContent = `Engine: Google Gemini (${state.config.gemini_model || 'gemini-2.0-flash'})`;
+    advBadge.textContent = "Gemini Agents";
+    advBadge.style.background = "rgba(74, 222, 128, 0.2)";
+    advBadge.style.color = "var(--accent-green)";
+  } else if (provider === 'mistral' && state.config.mistral_has_key) {
     badge.textContent = `Mistral (${state.config.mistral_model.replace('-latest', '')})`;
     label.textContent = `Engine: Mistral AI (${state.config.mistral_model})`;
     advBadge.textContent = "Mistral Agents";
@@ -1116,35 +1127,76 @@ function initAgentStudio() {
 
 async function runAgentWorkflow(goal, requestedAgent = null) {
   const container = document.getElementById('solution-container');
+  const chatThread = document.getElementById('agent-chat-thread');
   const agentId = requestedAgent || document.getElementById('agent-persona-select').value;
-  const activeEngine = state.config.ai_provider === 'mistral' && state.config.mistral_has_key
-    ? `Mistral AI (${state.config.mistral_model})`
-    : (state.config.ai_provider === 'openrouter' && state.config.openrouter_has_key
-      ? `OpenRouter (${state.config.openrouter_model})`
-      : 'Local Multi-Agent Engine');
+  
+  if (!state.agentChatSessionId) {
+    state.agentChatSessionId = `sess_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
+  }
+
+  // Render user question bubble in multi-turn thread
+  if (chatThread) {
+    chatThread.style.display = 'flex';
+    const userMsg = document.createElement('div');
+    userMsg.className = 'chat-message chat-user';
+    userMsg.innerHTML = `
+      <div class="chat-bubble">
+        <div class="chat-text">${escapeHtml(goal)}</div>
+      </div>
+      <div class="chat-avatar">👤</div>
+    `;
+    chatThread.appendChild(userMsg);
+    chatThread.scrollTop = chatThread.scrollHeight;
+  }
+
+  const activeEngine = state.config.ai_provider === 'gemini' && state.config.gemini_has_key
+    ? `Google Gemini (${state.config.gemini_model || 'gemini-2.0-flash'})`
+    : (state.config.ai_provider === 'mistral' && state.config.mistral_has_key
+      ? `Mistral AI (${state.config.mistral_model})`
+      : (state.config.ai_provider === 'openrouter' && state.config.openrouter_has_key
+        ? `OpenRouter (${state.config.openrouter_model})`
+        : 'Local Multi-Agent Engine'));
   
   container.innerHTML = `
     <div class="solution-placeholder">
       <div class="placeholder-icon rotating">⚙️</div>
       <h4>Agent Orchestrator Initializing Workflow...</h4>
-      <p>Executing diagnostic tools (<code>tool_ping</code>, <code>tool_portscan</code>, <code>tool_read_docs</code>) using <strong>${activeEngine}</strong> with full device context...</p>
+      <p>Executing live diagnostic tools (<code>tool_ping</code>, <code>tool_portscan</code>, <code>tool_read_docs</code>) using <strong>${activeEngine}</strong>...</p>
       <div class="agent-thinking-bar">
         <span class="thinking-dot"></span>
-        <span class="thinking-text">Dispatching specialized agents and consulting AI Knowledge Base...</span>
+        <span class="thinking-text">Dispatching specialized agents and synthesizing network solution...</span>
       </div>
     </div>
   `;
 
   try {
-    const res = await fetch('/api/agent/run', {
+    const res = await fetch('/api/agent/chat', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        goal,
+        session_id: state.agentChatSessionId,
+        message: goal,
         agent: agentId
       })
     });
     const solution = await res.json();
+    
+    // Render agent answer bubble in chat thread
+    if (chatThread) {
+      const agentMsg = document.createElement('div');
+      agentMsg.className = 'chat-message chat-agent';
+      const lead = solution.lead_agent || { name: 'NetMap Agent Orchestrator', icon: '🧠', role: 'Network Dispatcher' };
+      agentMsg.innerHTML = `
+        <div class="chat-avatar">${lead.icon || '🧠'}</div>
+        <div class="chat-bubble">
+          <div class="chat-author">${lead.name} <span class="chat-role">• ${solution.ai_engine || 'NetMap AI'}</span></div>
+          <div class="chat-text">${formatMarkdown(solution.summary || 'Solution generated below.')}</div>
+        </div>
+      `;
+      chatThread.appendChild(agentMsg);
+      chatThread.scrollTop = chatThread.scrollHeight;
+    }
+
     renderSolution(solution);
   } catch (err) {
     container.innerHTML = `
@@ -1178,7 +1230,7 @@ function renderSolution(sol) {
         </div>
       </div>
       <h3 class="sol-title" style="margin-top:10px;">${sol.goal}</h3>
-      <p class="sol-summary">${sol.summary || ''}</p>
+      <div class="sol-summary">${formatMarkdown(sol.summary || '')}</div>
     </div>
     ${sol.highlight_nodes && sol.highlight_nodes.length > 0 ? `
       <button class="btn btn-sm btn-primary" onclick="switchToTopologyAndHighlight()">
@@ -1204,8 +1256,8 @@ function renderSolution(sol) {
               <span class="trace-agent-label">${t.agent}</span>
               <span class="trace-tool-pill">Tool: ${t.tool}</span>
             </div>
-            <div class="trace-thought">${t.thought}</div>
-            <div class="trace-result code">${t.result}</div>
+            <div class="trace-thought">${formatMarkdown(t.thought || '')}</div>
+            <div class="trace-result code">${escapeHtml(t.result || '')}</div>
           </div>
         </div>
       `;
@@ -1369,8 +1421,8 @@ function renderSolution(sol) {
       const alert = document.createElement('div');
       alert.className = `alert-box ${w.type || 'caution'}`;
       alert.innerHTML = `
-        <div class="alert-title">${w.title}</div>
-        <div>${w.text}</div>
+        <div class="alert-title">${formatMarkdown(w.title || '')}</div>
+        <div>${formatMarkdown(w.text || '')}</div>
       `;
       container.appendChild(alert);
     });
@@ -1386,7 +1438,7 @@ function renderSolution(sol) {
       if (s.command) {
         cmdHtml = `
           <div class="code-block">
-            <code>${s.command}</code>
+            <code>${escapeHtml(s.command)}</code>
             <button class="btn-copy" onclick="copyText('${escapeHtml(s.command)}')">Copy</button>
           </div>
         `;
@@ -1395,8 +1447,8 @@ function renderSolution(sol) {
       step.innerHTML = `
         <div class="step-num">${s.step}</div>
         <div class="step-content">
-          <div class="step-heading">${s.title}</div>
-          <div class="step-details">${formatLinks(s.details)}</div>
+          <div class="step-heading">${formatMarkdown(s.title || '')}</div>
+          <div class="step-details">${formatMarkdown(s.details || '')}</div>
           ${cmdHtml}
         </div>
       `;
@@ -1411,10 +1463,35 @@ function renderSolution(sol) {
     tips.innerHTML = `
       <h5>💡 Best Practices for Your Archer BE550 & AussieBB Network</h5>
       <ul>
-        ${sol.best_practices.map(bp => `<li>${bp}</li>`).join('')}
+        ${sol.best_practices.map(bp => `<li>${formatMarkdown(bp)}</li>`).join('')}
       </ul>
     `;
     container.appendChild(tips);
+  }
+
+  // 10. QUICK CONVERSATIONAL FOLLOW-UP CHIPS
+  if (sol.quick_followups && sol.quick_followups.length > 0) {
+    const qfCard = document.createElement('div');
+    qfCard.className = 'quick-followups-card';
+    qfCard.innerHTML = `
+      <div class="quick-followups-header">
+        <span class="quick-followups-icon">💬</span>
+        <span class="quick-followups-title">Suggested Follow-Up Inquiries</span>
+        <span class="quick-followups-sub">Click any question to ask the agent:</span>
+      </div>
+      <div class="quick-followups-chips">
+        ${sol.quick_followups.map(q => `<button class="chip-followup" data-query="${escapeHtml(q)}">${escapeHtml(q)}</button>`).join('')}
+      </div>
+    `;
+    qfCard.querySelectorAll('.chip-followup').forEach(chip => {
+      chip.addEventListener('click', () => {
+        const query = chip.getAttribute('data-query');
+        const input = document.getElementById('goal-input');
+        if (input) input.value = query;
+        runAgentWorkflow(query);
+      });
+    });
+    container.appendChild(qfCard);
   }
 }
 
@@ -1422,7 +1499,7 @@ async function executeAgentAction(act) {
   const resultBox = document.getElementById('action-result-box');
   if (resultBox) {
     resultBox.style.display = 'block';
-    resultBox.innerHTML = `Running action: <strong>${act.label}</strong>...`;
+    resultBox.innerHTML = `Running action: <strong>${escapeHtml(act.label)}</strong>...`;
   }
   showToast(`Running action: ${act.label}`, "info");
 
@@ -1441,26 +1518,74 @@ async function executeAgentAction(act) {
       if (act.type === 'tool_ping') {
         const ping = data.result;
         resultBox.innerHTML = `
-          <div class="action-res-header">✓ Latency Test Result: ${act.params.host}</div>
+          <div class="action-res-header">✓ Latency Test Result: ${escapeHtml(act.params.host || '')}</div>
           <div class="action-res-body">Reachable: <strong>${ping.reachable}</strong> | Avg: <strong>${ping.avg || '-'} ms</strong> (Min: ${ping.min || '-'} ms, Max: ${ping.max || '-'} ms, Jitter: ±${ping.mdev || '-'} ms)</div>
         `;
       } else if (act.type === 'tool_portscan') {
         const ps = data.result;
         resultBox.innerHTML = `
-          <div class="action-res-header">✓ Port Scan Result: ${act.params.ip}</div>
+          <div class="action-res-header">✓ Port Scan Result: ${escapeHtml(act.params.ip || '')}</div>
           <div class="action-res-body">Open Ports Found: <strong>${ps.open_ports?.join(', ') || 'None'}</strong> (Tested: ${ps.scanned?.join(', ')})</div>
         `;
       } else if (act.type === 'tool_read_docs') {
         const doc = data.result;
         resultBox.innerHTML = `
-          <div class="action-res-header">✓ Knowledge Base Loaded: ${doc.title}</div>
-          <div class="action-res-body">File: <code>${doc.filename}</code>. <button class="btn btn-sm btn-secondary" onclick="openDocById('${doc.filename.replace('.md', '')}')">View Full Document</button></div>
+          <div class="action-res-header">✓ Knowledge Base Loaded: ${escapeHtml(doc.title || '')}</div>
+          <div class="action-res-body">File: <code>${escapeHtml(doc.filename || '')}</code>. <button class="btn btn-sm btn-secondary" onclick="openDocById('${(doc.filename || '').replace('.md', '')}')">View Full Document</button></div>
+        `;
+      } else if (act.type === 'tool_wifi_spectrum') {
+        const spec = data.result;
+        const aps = spec.networks || [];
+        const topAps = aps.slice(0, 5).map(ap => `
+          <div style="font-size:0.75rem;padding:3px 0;display:flex;justify-content:space-between;border-bottom:1px solid rgba(255,255,255,0.04);">
+            <span><strong>${escapeHtml(ap.ssid || '<Hidden>')}</strong> (Ch ${ap.channel || '-'}, ${ap.freq_mhz || '-'} MHz)</span>
+            <span style="color:${ap.signal_dbm > -65 ? 'var(--accent-green)' : (ap.signal_dbm > -75 ? 'var(--accent-yellow)' : 'var(--accent-red)')};">${ap.signal_dbm || '-'} dBm (${ap.quality || '-'}%)</span>
+          </div>
+        `).join('');
+
+        resultBox.innerHTML = `
+          <div class="action-res-header">✓ Wi-Fi Spectrum Survey Complete (${spec.total_networks || aps.length} Access Points Detected)</div>
+          <div class="action-res-body" style="margin-bottom:8px;">
+            Recommended 2.4 GHz Channel: <strong>Channel ${spec.recommended_2ghz_channel || '1'}</strong> (Interference Score: ${spec.interference_2ghz?.[spec.recommended_2ghz_channel] || 'Low'})<br/>
+            Recommended 5 GHz Channel: <strong>Channel ${spec.recommended_5ghz_channel || '36'}</strong> (Clean UNII-1/3)
+          </div>
+          ${topAps ? `<div style="margin-top:6px;"><div style="font-weight:700;font-size:0.75rem;color:var(--text-dim);margin-bottom:4px;">Strongest Nearby Access Points:</div>${topAps}</div>` : ''}
+        `;
+      } else if (act.type === 'tool_bufferbloat') {
+        const bb = data.result;
+        const gradeColor = bb.grade === 'A+' || bb.grade === 'A' ? 'var(--accent-green)' : (bb.grade === 'B' ? 'var(--accent-cyan)' : (bb.grade === 'C' ? 'var(--accent-yellow)' : 'var(--accent-red)'));
+        resultBox.innerHTML = `
+          <div class="action-res-header">✓ Bufferbloat Benchmark Complete: <span style="color:${gradeColor};font-size:1.1em;font-weight:800;">Grade ${bb.grade || 'A'}</span></div>
+          <div class="action-res-body">
+            Target: <strong>${bb.target_ip || '1.1.1.1'}</strong> | Unloaded: <strong>${bb.unloaded_latency_ms?.toFixed(1) || '-'} ms</strong> | Loaded: <strong>${bb.loaded_latency_ms?.toFixed(1) || '-'} ms</strong> | Bloat Delta: <strong style="color:${gradeColor}">+${bb.bufferbloat_delta_ms?.toFixed(1) || '0'} ms</strong> | Loss: <strong>${bb.packet_loss_pct || 0}%</strong><br/>
+            <span style="font-size:0.76rem;color:var(--text-muted);margin-top:4px;display:inline-block;">Verdict: ${escapeHtml(bb.recommendation || 'Network buffer latency is optimal.')}</span>
+          </div>
+        `;
+      } else if (act.type === 'tool_wake_on_lan') {
+        const wol = data.result;
+        resultBox.innerHTML = `
+          <div class="action-res-header">✓ Wake-on-LAN Magic Packet Dispatched</div>
+          <div class="action-res-body">${escapeHtml(wol.message || `Magic packet sent to ${wol.mac || 'target device'}`)} via UDP port ${wol.port || 9}.</div>
+        `;
+      } else if (act.type === 'tool_router_audit') {
+        const audit = data.result;
+        resultBox.innerHTML = `
+          <div class="action-res-header">✓ Archer BE550 Gateway Audit</div>
+          <div class="action-res-body">
+            Status: <strong>${audit.logged_in ? 'Authenticated' : 'Offline/Unauthenticated'}</strong> | Model: <strong>${audit.model || 'Archer BE550'}</strong> | Firmware: <strong>${audit.firmware || 'Latest'}</strong><br/>
+            WAN IP: <strong>${audit.wan_ip || 'DHCP'}</strong> | CGNAT Detected: <strong>${audit.is_cgnat ? 'Yes (100.64.0.0/10)' : 'No (Public IP)'}</strong>
+          </div>
+        `;
+      } else {
+        resultBox.innerHTML = `
+          <div class="action-res-header">✓ Action Executed: ${escapeHtml(act.label)}</div>
+          <div class="action-res-body"><pre style="font-size:0.75rem;margin:0;">${escapeHtml(JSON.stringify(data.result, null, 2))}</pre></div>
         `;
       }
     }
     showToast("Action executed successfully", "success");
   } catch (err) {
-    if (resultBox) resultBox.innerHTML = `<span style="color:var(--accent-red)">Failed: ${err.message}</span>`;
+    if (resultBox) resultBox.innerHTML = `<span style="color:var(--accent-red)">Failed: ${escapeHtml(err.message)}</span>`;
     showToast(`Action failed: ${err.message}`, "error");
   }
 }
@@ -1471,9 +1596,81 @@ window.switchToTopologyAndHighlight = function() {
   showToast("Highlighted affected nodes on topology map", "info");
 };
 
-function formatLinks(text) {
+function formatMarkdown(text) {
   if (!text) return '';
-  return text.replace(/\[([^\]]+)\]\((https?:\/\/[^\)]+)\)/g, '<a href="$2" target="_blank" rel="noopener">$1</a>');
+
+  // 1. Isolate code blocks
+  const codeBlocks = [];
+  let s = text.replace(/```([a-zA-Z0-9_-]*)\n([\s\S]*?)```/g, (match, lang, code) => {
+    const placeholder = `__CODE_BLOCK_${codeBlocks.length}__`;
+    const escaped = code.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    codeBlocks.push(`
+      <div class="code-block">
+        <pre><code>${escaped}</code></pre>
+        <button class="btn-copy" onclick="copyText('${escaped.replace(/'/g, "\\'").replace(/"/g, '&quot;').replace(/\n/g, '\\n')}')">Copy</button>
+      </div>
+    `);
+    return placeholder;
+  });
+
+  // 2. Inline code `code`
+  s = s.replace(/`([^`]+)`/g, '<code class="inline-code">$1</code>');
+
+  // 3. Bold **text** and __text__
+  s = s.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
+  s = s.replace(/__([^_]+)__/g, '<strong>$1</strong>');
+
+  // 4. Italic *text* and _text_
+  s = s.replace(/\*([^*]+)\*/g, '<em>$1</em>');
+
+  // 5. Markdown links [text](url)
+  s = s.replace(/\[([^\]]+)\]\((https?:\/\/[^\)]+)\)/g, '<a href="$2" target="_blank" rel="noopener">$1</a>');
+
+  // 6. Parse lists line-by-line
+  const lines = s.split('\n');
+  let inUl = false;
+  let inOl = false;
+  const processed = [];
+
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    const bulletMatch = line.match(/^\s*[-*+]\s+(.*)$/);
+    const numMatch = line.match(/^\s*(\d+)\.\s+(.*)$/);
+
+    if (bulletMatch) {
+      if (inOl) { processed.push('</ol>'); inOl = false; }
+      if (!inUl) { processed.push('<ul class="formatted-list">'); inUl = true; }
+      processed.push(`<li>${bulletMatch[1]}</li>`);
+    } else if (numMatch) {
+      if (inUl) { processed.push('</ul>'); inUl = false; }
+      if (!inOl) { processed.push('<ol class="formatted-num-list">'); inOl = true; }
+      processed.push(`<li>${numMatch[2]}</li>`);
+    } else {
+      if (inUl) { processed.push('</ul>'); inUl = false; }
+      if (inOl) { processed.push('</ol>'); inOl = false; }
+      processed.push(line);
+    }
+  }
+  if (inUl) processed.push('</ul>');
+  if (inOl) processed.push('</ol>');
+
+  let html = processed.join('\n');
+
+  // Convert newlines to linebreaks
+  html = html.replace(/\n\n+/g, '<br/><br/>').replace(/\n/g, '<br/>');
+  html = html.replace(/<br\/>\s*(<\/?(ul|ol|li|div|pre|blockquote)[^>]*>)/gi, '$1');
+  html = html.replace(/(<\/?(ul|ol|li|div|pre|blockquote)[^>]*>)\s*<br\/>/gi, '$1');
+
+  // Restore code blocks
+  codeBlocks.forEach((cb, idx) => {
+    html = html.replace(`__CODE_BLOCK_${idx}__`, cb);
+  });
+
+  return html;
+}
+
+function formatLinks(text) {
+  return formatMarkdown(text);
 }
 
 function escapeHtml(str) {
@@ -3057,8 +3254,22 @@ function initSettings() {
       orSelect.appendChild(opt);
     });
 
+    const geminiSelect = document.getElementById('gemini-model');
+    if (geminiSelect) {
+      geminiSelect.innerHTML = '';
+      (state.models.gemini || []).forEach(m => {
+        const opt = document.createElement('option');
+        opt.value = m.id;
+        opt.textContent = m.name;
+        if (m.id === state.config.gemini_model) opt.selected = true;
+        geminiSelect.appendChild(opt);
+      });
+    }
+
     document.getElementById('mistral-key').value = state.config.mistral_raw_key || '';
     document.getElementById('openrouter-key').value = state.config.openrouter_raw_key || '';
+    const gKeyInput = document.getElementById('gemini-key');
+    if (gKeyInput) gKeyInput.value = state.config.gemini_raw_key || '';
 
     const activeProvider = state.config.ai_provider || 'mistral';
     const activeToggle = document.querySelector(`.provider-toggle-btn[data-provider="${activeProvider}"]`);
@@ -3080,6 +3291,8 @@ function initSettings() {
     const mistralModel = document.getElementById('mistral-model').value;
     const openrouterKey = document.getElementById('openrouter-key').value.trim();
     const openrouterModel = document.getElementById('openrouter-model').value;
+    const geminiKey = document.getElementById('gemini-key')?.value.trim() || '';
+    const geminiModel = document.getElementById('gemini-model')?.value || 'gemini-2.0-flash';
 
     await fetch('/api/config', {
       method: 'POST',
@@ -3089,7 +3302,9 @@ function initSettings() {
         mistral_api_key: mistralKey,
         mistral_model: mistralModel,
         openrouter_api_key: openrouterKey,
-        openrouter_model: openrouterModel
+        openrouter_model: openrouterModel,
+        gemini_api_key: geminiKey,
+        gemini_model: geminiModel
       })
     });
 
@@ -3100,6 +3315,9 @@ function initSettings() {
     state.config.openrouter_has_key = Boolean(openrouterKey);
     state.config.openrouter_raw_key = openrouterKey;
     state.config.openrouter_model = openrouterModel;
+    state.config.gemini_has_key = Boolean(geminiKey);
+    state.config.gemini_raw_key = geminiKey;
+    state.config.gemini_model = geminiModel;
 
     updateEngineBadge();
     modal.classList.remove('open');
