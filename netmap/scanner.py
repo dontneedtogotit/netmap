@@ -63,13 +63,13 @@ def get_local_host_info() -> Dict[str, Any]:
 
     # Read IP routes
     try:
-        r_proc = subprocess.run(["ip", "-j", "route"], capture_output=True, text=True, timeout=2)
+        r_proc = subprocess.run(["ip", "-j", "route"], capture_output=True, text=True, timeout=ARP_NEIGH_TIMEOUT)
         routes = json.loads(r_proc.stdout)
         for r in routes:
             if r.get("dst") == "default":
-                info["gateway"] = r.get("gateway", "192.168.0.1")
-                info["interface"] = r.get("dev", "wlo1")
-                info["ip"] = r.get("prefsrc", "192.168.0.5")
+                info["gateway"] = r.get("gateway")
+                info["interface"] = r.get("dev")
+                info["ip"] = r.get("prefsrc")
                 if "mtu" in r:
                     info["mtu"] = r["mtu"]
     except Exception:
