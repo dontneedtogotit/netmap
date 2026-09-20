@@ -337,18 +337,41 @@ async function triggerRescan() {
 
   try {
     await fetch('/api/scan', { method: 'POST' });
+    const startedAt = Date.now();
+    const maxMs = 5 * 60 * 1000;
     const checkInterval = setInterval(async () => {
-      const res = await fetch('/api/status');
-      const data = await res.json();
-      if (!data.scanning) {
-        clearInterval(checkInterval);
-        state.isScanning = false;
-        if (btn) btn.disabled = false;
-        if (icon) icon.classList.remove('spinning');
-        if (text) text.textContent = "Rescan Network";
-        state.topology = data.topology;
-        updateUIWithTopology(state.topology);
-        showToast("Network scan completed successfully", "success");
+      try {
+        const res = await fetch('/api/status');
+        const data = await res.json();
+        if (!data.scanning) {
+          clearInterval(checkInterval);
+          state.isScanning = false;
+          if (btn) btn.disabled = false;
+          if (icon) icon.classList.remove('spinning');
+          if (text) text.textContent = "Rescan Network";
+          state.topology = data.topology;
+          updateUIWithTopology(state.topology);
+          showToast("Network scan completed successfully", "success");
+        } else if (Date.now() - startedAt > maxMs) {
+          clearInterval(checkInterval);
+          state.isScanning = false;
+          if (btn) btn.disabled = false;
+          if (icon) icon.classList.remove('spinning');
+          if (text) text.textContent = "Rescan Network";
+          updateStatus("Scan timed out; showing last known results.");
+          showToast("Scan is taking longer than expected. Showing current data.", "warning");
+        }
+      } catch (pollErr) {
+        console.error("Scan status poll failed:", pollErr);
+        if (Date.now() - startedAt > maxMs) {
+          clearInterval(checkInterval);
+          state.isScanning = false;
+          if (btn) btn.disabled = false;
+          if (icon) icon.classList.remove('spinning');
+          if (text) text.textContent = "Rescan Network";
+          updateStatus("Scan connection lost; showing last known results.");
+          showToast("Lost connection to NetMap during scan.", "error");
+        }
       }
     }, 1500);
   } catch (err) {
