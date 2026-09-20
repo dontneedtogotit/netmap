@@ -1120,31 +1120,57 @@ function renderSuggestions(suggestions) {
         </button>
       </div>
 
-      <h3 class="sug-title">${s.title}</h3>
-      <p class="sug-desc">${s.description}</p>
-
-      <div class="sug-diff-box">
-        <div class="diff-col current">
-          <span class="diff-label">Current State</span>
-          <span class="diff-val">${s.current_state}</span>
+      <div class="sug-main-row">
+        <div class="sug-main-text">
+          <h3 class="sug-title">${s.title}</h3>
+          <p class="sug-desc">${s.description}</p>
         </div>
-        <div class="diff-arrow">➔</div>
-        <div class="diff-col recommended">
-          <span class="diff-label">Recommended State</span>
-          <span class="diff-val">${s.recommended_state}</span>
-        </div>
+        <button class="btn btn-sm btn-secondary sug-expand" aria-expanded="false">
+          Details
+        </button>
       </div>
 
-      <div class="sug-path-box">
-        <span class="path-label">Archer BE550 Menu Path:</span>
-        <span class="path-val code">${s.be550_path}</span>
-      </div>
+      <div class="sug-details" hidden>
+        <div class="sug-diff-box">
+          <div class="diff-col current">
+            <span class="diff-label">Current State</span>
+            <span class="diff-val">${s.current_state}</span>
+          </div>
+          <div class="diff-arrow">➔</div>
+          <div class="diff-col recommended">
+            <span class="diff-label">Recommended State</span>
+            <span class="diff-val">${s.recommended_state}</span>
+          </div>
+        </div>
 
-      <div class="sug-steps">
-        <div class="sug-steps-title">Recommended Implementation Steps:</div>
-        <ol class="sug-steps-list">${stepsHtml}</ol>
+        <div class="sug-path-box">
+          <span class="path-label">Archer BE550 Menu Path:</span>
+          <span class="path-val code">${s.be550_path}</span>
+        </div>
+
+        <div class="sug-steps">
+          <div class="sug-steps-title">Recommended Implementation Steps:</div>
+          <ol class="sug-steps-list">${stepsHtml}</ol>
+        </div>
       </div>
     `;
+
+    const expandBtn = card.querySelector('.sug-expand');
+    const details = card.querySelector('.sug-details');
+    if (expandBtn && details) {
+      expandBtn.addEventListener('click', () => {
+        const isHidden = details.hasAttribute('hidden');
+        if (isHidden) {
+          details.removeAttribute('hidden');
+          expandBtn.textContent = 'Hide';
+          expandBtn.setAttribute('aria-expanded', 'true');
+        } else {
+          details.setAttribute('hidden', '');
+          expandBtn.textContent = 'Details';
+          expandBtn.setAttribute('aria-expanded', 'false');
+        }
+      });
+    }
 
     card.querySelector('.btn-ask-ai').addEventListener('click', () => {
       const goal = s.action_goal || s.title;

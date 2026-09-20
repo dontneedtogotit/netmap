@@ -2610,6 +2610,28 @@ body {
   box-shadow: 0 10px 32px rgba(125, 207, 255, 0.22);
 }
 
+.sug-main-row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 14px;
+}
+
+.sug-main-text {
+  flex: 1;
+  min-width: 0;
+}
+
+.sug-expand {
+  flex-shrink: 0;
+}
+
+.sug-details {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
 .sug-top-bar {
   display: flex;
   align-items: center;
