@@ -62,6 +62,7 @@ from netmap.router_client import (
 )
 from netmap.router_analyzer import RouterAnalyzer
 from netmap.constants import DEFAULT_ROUTER_GATEWAY
+from netmap.telemetry_cache import TELEMETRY
 
 BASE_DIR = Path(__file__).parent
 WEB_DIR = BASE_DIR / "web"
@@ -339,7 +340,7 @@ class NetMapHandler(http.server.SimpleHTTPRequestHandler):
         self._send_json(host.get("wifi", {}))
 
     def handle_get_metrics(self):
-        metrics = get_network_metrics()
+        metrics = TELEMETRY.get_network_metrics()
         self._send_json(metrics)
 
     def handle_get_router_settings(self):

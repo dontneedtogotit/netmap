@@ -88,7 +88,53 @@ def main():
     parser.add_argument("--port", type=int, default=8765, help="Port to run local server on (default: 8765)")
     parser.add_argument("--scan-cli", action="store_true", help="Run scan in CLI and print JSON output")
     parser.add_argument("--waybar", action="store_true", help="Output network status in JSON format for Waybar custom module")
+    parser.add_argument("--export-profiles", metavar="DEST", help="Export profiles to a zip archive")
+    parser.add_argument("--import-profiles", metavar="SRC", help="Import profiles from a zip archive")
+    parser.add_argument("--export-config", metavar="DEST", help="Export config JSON to a file")
+    parser.add_argument("--import-config", metavar="SRC", help="Import config JSON from a file")
     args = parser.parse_args()
+
+    if args.export_profiles or args.import_profiles or args.export_config or args.import_config:
+        from netmap.profile_manager import PROFILES_DIR
+        from netmap.advisor import CONFIG_FILE
+        import zipfile
+
+        if args.export_profiles:
+            dest = Path(args.export_profiles)
+            dest.parent.mkdir(parents=True, exist_ok=True)
+            with zipfile.ZipFile(dest, "w", compression=zipfile.ZIP_DEFLATED) as zf:
+                if PROFILES_DIR.exists():
+                    for file in PROFILES_DIR.glob("*.json"):
+                        zf.write(file, file.relative_to(PROFILES_DIR.parent))
+            print(f"Exported profiles to {dest}")
+            return
+
+        if args.import_profiles:
+            src = Path(args.import_profiles)
+            if not src.exists():
+                raise SystemExit(f"Import file not found: {src}")
+            PROFILES_DIR.mkdir(parents=True, exist_ok=True)
+            with zipfile.ZipFile(src, "r") as zf:
+                zf.extractall(PROFILES_DIR)
+            print(f"Imported profiles from {src}")
+            return
+
+        if args.export_config:
+            dest = Path(args.export_config)
+            dest.parent.mkdir(parents=True, exist_ok=True)
+            if CONFIG_FILE.exists():
+                dest.write_text(CONFIG_FILE.read_text(encoding="utf-8"), encoding="utf-8")
+            print(f"Exported config to {dest}")
+            return
+
+        if args.import_config:
+            src = Path(args.import_config)
+            if not src.exists():
+                raise SystemExit(f"Import file not found: {src}")
+            CONFIG_FILE.parent.mkdir(parents=True, exist_ok=True)
+            CONFIG_FILE.write_text(src.read_text(encoding="utf-8"), encoding="utf-8")
+            print(f"Imported config from {src}")
+            return
 
     if args.waybar:
         import json
