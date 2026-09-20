@@ -14,8 +14,16 @@ from typing import Dict, Any, List, Optional, Tuple
 PROFILES_DIR = Path(os.path.expanduser("~/.config/netmap/profiles"))
 LEGACY_DEVICE_SETTINGS_FILE = Path(os.path.expanduser("~/.config/netmap/device_settings.json"))
 
-def _ensure_profiles_dir():
+def _ensure_profiles_dir() -> Path:
     PROFILES_DIR.mkdir(parents=True, exist_ok=True)
+    return PROFILES_DIR
+
+def _atomic_write_json(path: Path, data: Dict[str, Any]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp_path = path.with_suffix(path.suffix + ".tmp")
+    with open(tmp_path, "w", encoding="utf-8") as f:
+        json.dump(data, f, indent=2)
+    tmp_path.replace(path)
 
 def sanitize_id(val: str) -> str:
     """Sanitize a string for safe filesystem and profile ID usage."""
@@ -82,15 +90,13 @@ def get_profile(profile_id: str) -> Optional[Dict[str, Any]]:
             pass
     return None
 
-def save_profile(profile_data: Dict[str, Any]):
-    """Save profile dictionary to file."""
+def save_profile(profile_data: Dict[str, Any]) -> None:
+    """Save profile dictionary to file using an atomic write."""
     profile_id = profile_data.get("id")
     if not profile_id:
         return
     path = get_profile_file_path(profile_id)
-    _ensure_profiles_dir()
-    with open(path, "w", encoding="utf-8") as f:
-        json.dump(profile_data, f, indent=2)
+    _atomic_write_json(path, profile_data)
 
 def list_profiles(active_id: Optional[str] = None) -> List[Dict[str, Any]]:
     """

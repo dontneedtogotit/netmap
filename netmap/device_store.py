@@ -5,10 +5,18 @@ preset fields, and user-defined custom attributes.
 
 import os
 import json
+import tempfile
 from pathlib import Path
 from typing import Dict, Any, Optional
 
 DEVICE_SETTINGS_FILE = Path(os.path.expanduser("~/.config/netmap/device_settings.json"))
+
+def _atomic_write_json(path: Path, data: Dict[str, Any]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp_path = path.with_suffix(path.suffix + ".tmp")
+    with open(tmp_path, "w", encoding="utf-8") as f:
+        json.dump(data, f, indent=2)
+    tmp_path.replace(path)
 
 PRESET_DEVICE_ROLES = [
     "Primary Workstation / PC",

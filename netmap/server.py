@@ -125,7 +125,13 @@ class NetMapHandler(http.server.SimpleHTTPRequestHandler):
         super().__init__(*args, directory=str(WEB_DIR), **kwargs)
 
     def end_headers(self):
-        self.send_header("Access-Control-Allow-Origin", "*")
+        allowed_origin = self.headers.get("Origin")
+        if allowed_origin in {
+            "http://localhost",
+            "http://127.0.0.1",
+            "file://",
+        }:
+            self.send_header("Access-Control-Allow-Origin", allowed_origin)
         self.send_header("Access-Control-Allow-Methods", "GET, POST, DELETE, OPTIONS")
         self.send_header("Access-Control-Allow-Headers", "Content-Type")
         self.send_header("Cache-Control", "no-cache, no-store, must-revalidate")
@@ -400,16 +406,16 @@ class NetMapHandler(http.server.SimpleHTTPRequestHandler):
 
     def handle_get_config(self):
         cfg = load_config()
-        
+
         m_key = cfg.get("mistral_api_key", "")
         m_masked = (m_key[:4] + "..." + m_key[-4:]) if len(m_key) > 8 else m_key
-        
+
         or_key = cfg.get("openrouter_api_key", "")
         or_masked = (or_key[:6] + "..." + or_key[-4:]) if len(or_key) > 10 else or_key
-        
+
         g_key = cfg.get("gemini_api_key", "")
         g_masked = (g_key[:4] + "..." + g_key[-4:]) if len(g_key) > 8 else g_key
-        
+
         provider = cfg.get("ai_provider")
         if not provider:
             if g_key:
@@ -425,15 +431,12 @@ class NetMapHandler(http.server.SimpleHTTPRequestHandler):
             "ai_provider": provider,
             "mistral_has_key": bool(m_key),
             "mistral_masked_key": m_masked,
-            "mistral_raw_key": m_key,
             "mistral_model": cfg.get("mistral_model", "mistral-small-latest"),
             "openrouter_has_key": bool(or_key),
             "openrouter_masked_key": or_masked,
-            "openrouter_raw_key": or_key,
             "openrouter_model": cfg.get("openrouter_model", "deepseek/deepseek-v4-flash-0731:free"),
             "gemini_has_key": bool(g_key),
             "gemini_masked_key": g_masked,
-            "gemini_raw_key": g_key,
             "gemini_model": cfg.get("gemini_model", "gemini-2.0-flash")
         })
 
