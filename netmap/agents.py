@@ -163,12 +163,18 @@ def _normalize_exact_mapping(topology: Dict[str, Any], goal: str = "") -> Dict[s
     target_label = "Primary LAN port"
     target_speed = "1 Gbps"
     if target_device:
-        tp = _lookup_device_port_map(target_device)
-        target_ports = tp.get("lan", [])
-        if target_ports:
-            target_port = target_ports[0].get("port", target_port)
-            target_label = target_ports[0].get("label", target_label)
-            target_speed = target_ports[0].get("max_speed", target_speed)
+        target_category = (target_device.get("category") or "").lower()
+        if target_category in {"camera", "nvr"}:
+            target_port = "ETH1"
+            target_label = "LAN / PoE-capable"
+            target_speed = "1 Gbps"
+        else:
+            tp = _lookup_device_port_map(target_device)
+            target_ports = tp.get("lan", [])
+            if target_ports:
+                target_port = target_ports[0].get("port", target_port)
+                target_label = target_ports[0].get("label", target_label)
+                target_speed = target_ports[0].get("max_speed", target_speed)
 
     cable = "Cat 6" if matched_link else "Likely Cat 6"
     confidence = "high" if matched_link else "medium"
@@ -679,7 +685,7 @@ class AgentOrchestrator:
                 "label": "Lookup Exact Device Mapping",
                 "icon": "🔎",
                 "type": "tool_topology_lookup",
-                "params": {"identifier": goal}
+                "params": {"identifier": goal_lower}
             })
 
         return actions

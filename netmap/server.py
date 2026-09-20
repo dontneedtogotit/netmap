@@ -345,7 +345,7 @@ class NetMapHandler(http.server.SimpleHTTPRequestHandler):
 
     def handle_get_suggestions(self):
         topo = STATE.get_topology()
-        suggestions = list((topo or {}).get("suggestions") or [])
+        suggestions = list((topo or {}).get("suggestions") or generate_network_suggestions(topo or {}))
         if STATE.router_audit and "findings" in STATE.router_audit:
             existing_ids = {s.get("id") for s in suggestions}
             for f in STATE.router_audit.get("findings", []):
@@ -361,7 +361,7 @@ class NetMapHandler(http.server.SimpleHTTPRequestHandler):
                         "recommended_state": f["recommended_value"],
                         "be550_path": f["router_path"],
                         "action_goal": f["ai_prompt"],
-                        "steps": [f["fix_guidance"]]
+                        "steps": [f["fix_guidance"]],
                     })
         self._send_json({"suggestions": suggestions})
 

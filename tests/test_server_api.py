@@ -26,7 +26,12 @@ class TestServerAPI(unittest.TestCase):
             "router_settings": {"hardware": {"model_name": "Archer BE550 v2"}},
             "devices": [
                 {"ip": "192.168.0.5", "mac": "B8:FB:B3:01:02:03", "name": "Workstation", "category": "host"},
+                {"ip": "192.168.0.1", "mac": "B8:FB:B3:01:02:03", "name": "Archer BE550 v2", "category": "router", "model": "Archer BE550 v2"},
                 {"ip": "192.168.0.136", "mac": "28:57:BE:11:22:33", "name": "Cam 1", "category": "camera"}
+            ],
+            "links": [
+                {"source": "192.168.0.1", "target": "192.168.0.136", "type": "wired", "cable": "Cat 6"},
+                {"source": "192.168.0.1", "target": "192.168.0.5", "type": "wired", "cable": "Cat 6"}
             ]
         })
         time.sleep(0.3)
@@ -78,6 +83,19 @@ class TestServerAPI(unittest.TestCase):
         sugs = self._get("/api/suggestions")
         self.assertIn("suggestions", sugs)
         self.assertGreater(len(sugs["suggestions"]), 0)
+
+    def test_post_solve_returns_exact_mapping_for_cat6_question(self):
+        payload = {
+            "goal": "Which port does the cat 6 go to for my camera?",
+            "agent": "orchestrator"
+        }
+        ans = self._post("/api/solve", payload)
+        mapping = ans.get("exact_mapping") or {}
+        self.assertEqual(mapping.get("cable"), "Cat 6")
+        self.assertEqual(mapping.get("confidence"), "high")
+        self.assertEqual(mapping["source"]["port"], "LAN1")
+        self.assertEqual(mapping["target"]["ip"], "192.168.0.136")
+        self.assertEqual(mapping["target"]["port"], "ETH1")
 
     def test_devices_settings_crud(self):
         # 1. Get presets
