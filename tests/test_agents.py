@@ -16,6 +16,8 @@ from netmap.agents import (
     tool_list_docs,
     tool_read_docs,
     tool_get_device,
+    tool_topology_lookup,
+    _normalize_exact_mapping,
     AgentOrchestrator
 )
 from netmap.server import ThreadedHTTPServer, NetMapHandler, STATE
@@ -73,6 +75,60 @@ class TestAgentTools(unittest.TestCase):
         dev_mac = tool_get_device(self.sample_topo, "B8:FB:B3:01:02:03")
         self.assertIsNotNone(dev_mac)
         self.assertEqual(dev_mac["name"], "Workstation")
+
+    def test_tool_topology_lookup_by_ip(self):
+        res = tool_topology_lookup(self.sample_topo, "192.168.0.136")
+        self.assertTrue(res.get("found"))
+        self.assertEqual(res["device"]["name"], "Driveway Cam")
+        self.assertIsInstance(res.get("links"), list)
+
+    def test_exact_mapping_camera_high_confidence(self):
+        topo = {
+            "host": {"ip": "192.168.0.5", "gateway": "192.168.0.1"},
+            "devices": [
+                {"ip": "192.168.0.1", "model": "Archer BE550 v2", "category": "router"},
+                {"ip": "192.168.0.136", "category": "camera", "open_ports": [554, 8554]}
+            ],
+            "links": [
+                {"source": "192.168.0.1", "target": "192.168.0.136", "type": "wired", "cable": "Cat 6"}
+            ]
+        }
+        m = _normalize_exact_mapping(topo, goal="Which port does the cat 6 go to for my camera?")
+        self.assertEqual(m["source"]["port"], "LAN1")
+        self.assertEqual(m["target"]["ip"], "192.168.0.136")
+        self.assertEqual(m["target"]["port"], "ETH1")
+        self.assertEqual(m["cable"], "Cat 6")
+        self.assertEqual(m["confidence"], "high")
+
+    def test_exact_mapping_pc_uses_host_link(self):
+        topo = {
+            "host": {"ip": "192.168.0.5", "gateway": "192.168.0.1"},
+            "devices": [
+                {"ip": "192.168.0.1", "model": "Archer BE550 v2", "category": "router"},
+                {"ip": "192.168.0.5", "category": "pc"}
+            ],
+            "links": [
+                {"source": "192.168.0.1", "target": "192.168.0.5", "type": "wired", "cable": "Cat 6"}
+            ]
+        }
+        m = _normalize_exact_mapping(topo, goal="Which port does the cat 6 go to for my pc?")
+        self.assertEqual(m["source"]["port"], "LAN1")
+        self.assertEqual(m["target"]["ip"], "192.168.0.5")
+        self.assertEqual(m["cable"], "Cat 6")
+        self.assertEqual(m["confidence"], "high")
+
+    def test_exact_mapping_fallback_when_no_match(self):
+        topo = {
+            "host": {"ip": "192.168.0.5", "gateway": "192.168.0.1"},
+            "devices": [
+                {"ip": "192.168.0.1", "model": "Archer BE550 v2", "category": "router"}
+            ],
+            "links": []
+        }
+        m = _normalize_exact_mapping(topo, goal="Which port does the cat 6 go to for my extender?")
+        self.assertEqual(m["source"]["port"], "LAN1")
+        self.assertEqual(m["cable"], "Likely Cat 6")
+        self.assertEqual(m["confidence"], "medium")
 
 
 class TestAgentOrchestrator(unittest.TestCase):
