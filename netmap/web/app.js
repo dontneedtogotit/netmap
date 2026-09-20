@@ -48,6 +48,12 @@ let state = {
     isPanning: false,
     startX: 0,
     startY: 0
+  },
+  lastUpdatedAt: null,
+  freshness: {
+    network_metrics: null,
+    wan_info: null,
+    devices: null
   }
 };
 
@@ -171,9 +177,12 @@ async function loadInitialData() {
     const res = await fetch('/api/status');
     const data = await res.json();
     state.activeProfileId = data.active_profile_id;
-    state.viewingProfileId = data.viewing_profile_id || data.active_profile_id;
+    state.viewingProfileId = data.viewing_profile_id || data.active_profileId;
     state.topology = data.topology;
+    state.lastUpdatedAt = new Date();
+    state.freshness = data.freshness || state.freshness;
     updateUIWithTopology(state.topology);
+    updateFreshnessUI();
     await refreshProfilesList();
     await fetchRouterAuditStatus();
   } catch (err) {
@@ -351,6 +360,22 @@ async function triggerRescan() {
 function updateStatus(msg) {
   const el = document.getElementById('connection-status');
   if (el) el.textContent = msg;
+}
+
+function updateFreshnessUI() {
+  const el = document.getElementById('freshness-label');
+  if (!el) return;
+  const f = state.freshness || {};
+  const parts = [];
+  if (f.network_metrics?.is_fresh) parts.push('metrics fresh');
+  else if (f.network_metrics?.is_stale) parts.push('metrics stale');
+  if (f.wan_info?.is_fresh) parts.push('wan fresh');
+  else if (f.wan_info?.is_stale) parts.push('wan stale');
+  if (f.devices?.is_fresh) parts.push('devices fresh');
+  else if (f.devices?.is_stale) parts.push('devices stale');
+  const label = parts.length ? parts.join(', ') : 'freshness unavailable';
+  const ts = state.lastUpdatedAt ? state.lastUpdatedAt.toLocaleTimeString() : '';
+  el.textContent = ts ? `${label} · updated ${ts}` : label;
 }
 
 // -------------------------------------------------------------
@@ -682,6 +707,18 @@ function scheduleHideNodeHud() {
 function renderTopology(topo) {
   const svg = document.getElementById('topo-svg');
   if (!svg) return;
+
+  if (renderTopology._raf) {
+    cancelAnimationFrame(renderTopology._raf);
+  }
+
+  renderTopology._raf = requestAnimationFrame(() => {
+    renderTopology._raf = null;
+    renderTopologyNow(topo, svg);
+  });
+}
+
+function renderTopologyNow(topo, svg) {
   svg.innerHTML = '';
 
   const width = svg.clientWidth || 960;
@@ -807,8 +844,9 @@ function renderTopology(topo) {
   lane1Devices.forEach((dev, idx) => {
     const total = Math.max(lane1Devices.length, 1);
     const clientY = (height * 0.16) + (idx / Math.max(total - 1, 1)) * (height * 0.68);
+    const stableId = `cam-${dev.ip || dev.mac || idx}`;
     const cNode = {
-      id: `cam-${idx}`,
+      id: stableId,
       name: dev.name || `Cam ${dev.ip}`,
       sub: `${dev.ip}`,
       category: dev.category || 'camera',
@@ -825,8 +863,9 @@ function renderTopology(topo) {
   lane2Devices.forEach((dev, idx) => {
     const total = Math.max(lane2Devices.length, 1);
     const clientY = (height * 0.16) + (idx / Math.max(total - 1, 1)) * (height * 0.68);
+    const stableId = `dev-${dev.ip || dev.mac || idx}`;
     const cNode = {
-      id: `dev-${idx}`,
+      id: stableId,
       name: dev.name || `Device ${dev.ip}`,
       sub: `${dev.ip}`,
       category: dev.category || 'unknown',
