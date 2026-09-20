@@ -139,12 +139,8 @@ def _normalize_exact_mapping(topology: Dict[str, Any], goal: str = "") -> Dict[s
 
     matched_link = None
     matched_target_ip = None
-    if any(keyword in goal_lower for keyword in ["cat 6", "ethernet", "which port", "goes", "plug"]):
-        if host_ip:
-            matched_link = next((l for l in links if l.get("source") in {host_ip, gateway_ip} and l.get("target") in {host_ip, gateway_ip}), None)
-            matched_target_ip = host_ip if matched_link else None
 
-    if not matched_link and any(keyword in goal_lower for keyword in ["extender", "ex6250"]):
+    if any(keyword in goal_lower for keyword in ["extender", "ex6250"]):
         ext = next((d for d in devices if (d.get("category") or "").lower() == "extender"), None)
         if ext:
             matched_target_ip = ext.get("ip")
@@ -155,6 +151,12 @@ def _normalize_exact_mapping(topology: Dict[str, Any], goal: str = "") -> Dict[s
         if cam:
             matched_target_ip = cam.get("ip")
             matched_link = next((l for l in links if l.get("source") == gateway_ip and l.get("target") == matched_target_ip), None)
+
+    if not matched_link and any(keyword in goal_lower for keyword in ["cat 6", "ethernet", "which port", "goes", "plug"]):
+        host_hints = [host_ip, gateway_ip, "pc", "host", "workstation", "desktop", "laptop"]
+        if any(h in goal_lower for h in host_hints):
+            matched_link = next((l for l in links if l.get("source") in {host_ip, gateway_ip} and l.get("target") in {host_ip, gateway_ip}), None)
+            matched_target_ip = host_ip if matched_link else None
 
     target_device = _device_by_ip(matched_target_ip) if matched_target_ip else {}
     target_port = "LAN1"
