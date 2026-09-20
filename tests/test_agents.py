@@ -100,6 +100,25 @@ class TestAgentTools(unittest.TestCase):
         self.assertEqual(m["cable"], "Cat 6")
         self.assertEqual(m["confidence"], "high")
 
+    def test_exact_mapping_extender_preferred_over_host(self):
+        topo = {
+            "host": {"ip": "192.168.0.5", "gateway": "192.168.0.1"},
+            "devices": [
+                {"ip": "192.168.0.1", "model": "Archer BE550 v2", "category": "router"},
+                {"ip": "192.168.0.76", "category": "extender"},
+                {"ip": "192.168.0.5", "category": "pc"}
+            ],
+            "links": [
+                {"source": "192.168.0.1", "target": "192.168.0.5", "type": "wired", "cable": "Cat 6"},
+                {"source": "192.168.0.1", "target": "192.168.0.76", "type": "wired", "cable": "Cat 6"}
+            ]
+        }
+        m = _normalize_exact_mapping(topo, goal="Which port does the cat 6 go to for my extender?")
+        self.assertEqual(m["source"]["port"], "LAN1")
+        self.assertEqual(m["target"]["ip"], "192.168.0.76")
+        self.assertEqual(m["cable"], "Cat 6")
+        self.assertEqual(m["confidence"], "high")
+
     def test_exact_mapping_pc_uses_host_link(self):
         topo = {
             "host": {"ip": "192.168.0.5", "gateway": "192.168.0.1"},
