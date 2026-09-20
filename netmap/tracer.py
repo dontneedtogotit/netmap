@@ -10,6 +10,20 @@ import json
 import time
 from typing import Dict, Any, List
 
+from netmap.constants import (
+    FALLBACK_WAN_INFO,
+    HTTP_REQUEST_TIMEOUT,
+    HTTP_LONG_REQUEST_TIMEOUT,
+    PING_TIMEOUT_SECONDS,
+    PING_COUNT_DEFAULT,
+    TRACEROUTE_TIMEOUT,
+    ARP_NEIGH_TIMEOUT,
+    BUFFERBLOAT_IDLE_PING_COUNT,
+    BUFFERBLOAT_LOAD_WARMUP_SECONDS,
+    LLM_FALLBACK_MODELS_MAX_RETRIES,
+    LLM_FALLBACK_RETRY_DELAY_SECONDS,
+)
+
 def is_cgnat_ip(ip: str) -> bool:
     """Check if an IP is in the RFC 6598 Carrier-Grade NAT range (100.64.0.0/10)."""
     try:
@@ -31,7 +45,7 @@ def trace_route(target: str = "1.1.1.1", max_hops: int = 12) -> List[Dict[str, A
             ["tracepath", "-n", "-m", str(max_hops), target],
             capture_output=True,
             text=True,
-            timeout=8
+            timeout=TRACEROUTE_TIMEOUT
         )
         lines = proc.stdout.splitlines()
         for line in lines:
@@ -63,20 +77,10 @@ def trace_route(target: str = "1.1.1.1", max_hops: int = 12) -> List[Dict[str, A
 
 def get_public_wan_info() -> Dict[str, Any]:
     """Fetch external WAN IP, ISP, ASN, and geographic location."""
-    default_info = {
-        "ip": "117.20.69.236",
-        "hostname": "117-20-69-236.751445.bne.nbn.aussiebb.net",
-        "org": "AS4764 Aussie Fibre Pty Ltd (Aussie Broadband)",
-        "city": "Brisbane",
-        "region": "Queensland",
-        "country": "AU",
-        "isp": "Aussie Broadband",
-        "technology": "NBN (National Broadband Network)",
-        "cgnat_active": True
-    }
+    default_info = dict(FALLBACK_WAN_INFO)
     try:
         req = urllib.request.Request("https://ipinfo.io/json", headers={"User-Agent": "NetMap/1.0"})
-        with urllib.request.urlopen(req, timeout=3) as resp:
+        with urllib.request.urlopen(req, timeout=HTTP_REQUEST_TIMEOUT) as resp:
             data = json.loads(resp.read().decode())
             hostname = data.get("hostname", "")
             org = data.get("org", "")
@@ -96,14 +100,14 @@ def get_public_wan_info() -> Dict[str, Any]:
     except Exception:
         return default_info
 
-def ping_host(host: str, count: int = 3) -> Dict[str, Any]:
+def ping_host(host: str, count: int = PING_COUNT_DEFAULT) -> Dict[str, Any]:
     """Measure ping latency and packet loss to a host."""
     try:
         proc = subprocess.run(
-            ["ping", "-c", str(count), "-W", "2", host],
+            ["ping", "-c", str(count), "-W", str(PING_TIMEOUT_SECONDS), host],
             capture_output=True,
             text=True,
-            timeout=5
+            timeout=HTTP_LONG_REQUEST_TIMEOUT
         )
         out = proc.stdout
         # Parse rtt min/avg/max/mdev = 0.812/1.024/1.243/0.176 ms

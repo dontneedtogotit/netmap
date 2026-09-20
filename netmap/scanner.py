@@ -12,20 +12,30 @@ import ssl
 import gzip
 from concurrent.futures import ThreadPoolExecutor
 from typing import Dict, Any, List, Optional
+
 from netmap.hardware import identify_device, KNOWN_ROUTER_MODELS, KNOWN_EXTENDER_MODELS, load_tvpc_cameras, CAMERA_NVR_PORTS
 from netmap.tracer import trace_route, get_public_wan_info, get_network_metrics
 from netmap.device_store import get_settings_for_device
 from netmap.suggestions import generate_network_suggestions
-
+from netmap.constants import (
+    SUBNET_SCAN_WORKERS,
+    PORT_PROBE_TIMEOUT,
+    PORT_SCAN_DEFAULT_PORTS,
+    AVAHI_BROWSE_TIMEOUT,
+    DEFAULT_ROUTER_GATEWAY,
+    FALLBACK_WAN_INFO,
+    HTTP_REQUEST_TIMEOUT,
+    HTTP_LONG_REQUEST_TIMEOUT,
+)
 def get_local_host_info() -> Dict[str, Any]:
     """Retrieve details of the local machine and active network interface."""
     info = {
         "hostname": socket.gethostname(),
         "os": "Omarchy Linux",
-        "interface": "wlo1",
-        "ip": "192.168.0.5",
+        "interface": None,
+        "ip": None,
         "mac": "",
-        "gateway": "192.168.0.1",
+        "gateway": DEFAULT_ROUTER_GATEWAY,
         "dns": [],
         "mtu": 1500,
         "wifi": {}
@@ -49,7 +59,7 @@ def get_local_host_info() -> Dict[str, Any]:
                     if len(parts) > 1:
                         info["dns"].append(parts[1])
     except Exception:
-        info["dns"] = ["192.168.0.1", "1.1.1.1"]
+        pass
 
     # Read IP routes
     try:
@@ -91,7 +101,7 @@ def get_local_host_info() -> Dict[str, Any]:
             ["nmcli", "-t", "-f", "ACTIVE,SSID,BSSID,CHAN,FREQ,RATE,SIGNAL,SECURITY", "dev", "wifi"],
             capture_output=True,
             text=True,
-            timeout=3
+            timeout=WIFI_SCAN_TIMEOUT
         )
         for line in wifi_proc.stdout.splitlines():
             # Use negative lookbehind so escaped colons (\:) in BSSID are not split

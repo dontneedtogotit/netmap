@@ -61,6 +61,7 @@ from netmap.router_client import (
     clear_stored_credentials
 )
 from netmap.router_analyzer import RouterAnalyzer
+from netmap.constants import DEFAULT_ROUTER_GATEWAY
 
 BASE_DIR = Path(__file__).parent
 WEB_DIR = BASE_DIR / "web"
@@ -566,12 +567,14 @@ class NetMapHandler(http.server.SimpleHTTPRequestHandler):
         })
 
     def handle_post_router_login(self, data: Dict[str, Any]):
+        from netmap.schemas import parse_router_login
+        parsed = parse_router_login(data)
         topo = STATE.get_topology()
-        default_gw = topo.get("host", {}).get("gateway", "192.168.0.1") if topo else "192.168.0.1"
-        gw_url = data.get("url") or f"https://{default_gw}"
-        user = data.get("username") or "admin"
-        pwd = data.get("password", "")
-        remember = bool(data.get("remember", False))
+        default_gw = topo.get("host", {}).get("gateway", DEFAULT_ROUTER_GATEWAY) if topo else DEFAULT_ROUTER_GATEWAY
+        gw_url = parsed.url or f"https://{default_gw}"
+        user = parsed.username
+        pwd = parsed.password
+        remember = parsed.remember
 
         if not pwd:
             saved = load_stored_credentials(gw_url)
