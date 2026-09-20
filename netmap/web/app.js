@@ -1282,8 +1282,57 @@ function renderSolution(sol) {
   // Track highlighted IPs
   state.highlightedIps = sol.highlight_nodes || [];
 
-  // 1. LEAD AGENT & HEADER CARD
   const leadAgent = sol.lead_agent || { name: 'NetMap Agent Orchestrator', icon: '🧠', role: 'Network Dispatcher' };
+
+  // 0. EXACT WIRING/PORT MAPPING ANSWER CARD (shown first when available)
+  const exact = sol.exact_mapping;
+  if (exact && exact.source && exact.target) {
+    const mappingCard = document.createElement('div');
+    mappingCard.className = 'exact-mapping-card';
+    mappingCard.innerHTML = `
+      <div class="exact-mapping-header">
+        <div class="exact-mapping-title">
+          <span class="exact-mapping-icon">🔌</span>
+          <span>Exact Port-to-Port Mapping</span>
+        </div>
+        <span class="exact-mapping-badge confidence-${exact.confidence || 'medium'}">
+          ${(exact.confidence || 'medium').toUpperCase()} CONFIDENCE
+        </span>
+      </div>
+      <div class="exact-mapping-body">
+        <div class="exact-mapping-endpoint">
+          <div class="exact-mapping-device">${escapeHtml(exact.source.device || 'Router')}</div>
+          <div class="exact-mapping-ip">${escapeHtml(exact.source.ip || '')}</div>
+          <div class="exact-mapping-port">${escapeHtml(exact.source.port || 'LAN1')}</div>
+          <div class="exact-mapping-label">${escapeHtml(exact.source.label || 'LAN 1')}</div>
+        </div>
+        <div class="exact-mapping-center">
+          <div class="exact-mapping-cable">${escapeHtml(exact.cable || 'Cat 6')}</div>
+          <div class="exact-mapping-speed">${escapeHtml(exact.speed || '')}</div>
+          <div class="exact-mapping-arrow">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+              <line x1="5" y1="12" x2="19" y2="12"></line>
+              <polyline points="12 5 19 12 12 19"></polyline>
+            </svg>
+          </div>
+        </div>
+        <div class="exact-mapping-endpoint">
+          <div class="exact-mapping-device">${escapeHtml(exact.target.device || 'Device')}</div>
+          <div class="exact-mapping-ip">${escapeHtml(exact.target.ip || '')}</div>
+          <div class="exact-mapping-port">${escapeHtml(exact.target.port || 'LAN1')}</div>
+          <div class="exact-mapping-label">${escapeHtml(exact.target.label || 'LAN 1')}</div>
+        </div>
+      </div>
+      ${exact.reasoning ? `<div class="exact-mapping-reasoning">${escapeHtml(exact.reasoning)}</div>` : ''}
+      <button class="btn btn-sm btn-secondary exact-mapping-topo" onclick="switchToTopologyAndHighlight()">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:14px;height:14px;"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>
+        Show on Topology Map
+      </button>
+    `;
+    container.appendChild(mappingCard);
+  }
+
+  // 1. LEAD AGENT & HEADER CARD
   const header = document.createElement('div');
   header.className = 'solution-header-card';
   header.innerHTML = `
@@ -1330,7 +1379,7 @@ function renderSolution(sol) {
     });
 
     traceCard.innerHTML = `
-      <details class="trace-accordion" open>
+      <details class="trace-accordion">
         <summary class="trace-summary-header">
           <span>🔍 Agent Execution Trace & Tool Invocations (${sol.agent_trace.length} Steps)</span>
           <span class="trace-collapse-hint">Click to toggle</span>

@@ -19,8 +19,6 @@ from netmap.advisor import (
 )
 from netmap.suggestions import generate_network_suggestions
 
-DOCS_DIR = Path(__file__).parent / "docs"
-
 # ----------------------------------------------------------------------
 # 1. Specialized Agent Personas & Catalog
 # ----------------------------------------------------------------------
@@ -75,8 +73,144 @@ AGENT_CATALOG = {
     }
 }
 
+DOCS_DIR = Path(__file__).parent / "docs"
+
 # ----------------------------------------------------------------------
-# 2. Callable Agent Diagnostic Tools
+# 2. Router hardware port map used for exact port-to-port answers
+# ----------------------------------------------------------------------
+_ROUTER_PORT_MAP = {
+    "BE550v2": {
+        "wan": [{"port": "WAN", "label": "2.5 Gbps WAN", "max_speed": "2.5 Gbps"}],
+        "lan": [
+            {"port": "LAN1", "label": "2.5 Gbps LAN 1", "max_speed": "2.5 Gbps"},
+            {"port": "LAN2", "label": "2.5 Gbps LAN 2", "max_speed": "2.5 Gbps"},
+            {"port": "LAN3", "label": "2.5 Gbps LAN 3", "max_speed": "2.5 Gbps"},
+            {"port": "LAN4", "label": "2.5 Gbps LAN 4", "max_speed": "2.5 Gbps"},
+        ],
+        "usb": [{"port": "USB3", "label": "USB 3.0", "max_speed": "USB 3.0"}],
+    }
+}
+
+# ----------------------------------------------------------------------
+# 2b. Exact cable mapping helpers
+# ----------------------------------------------------------------------
+def _lookup_device_port_map(device: Dict[str, Any]) -> Dict[str, Any]:
+    """Return best-known port map for a device from known hardware tables."""
+    model = (device.get("model") or device.get("name") or "").upper()
+    if "BE550" in model:
+        return _ROUTER_PORT_MAP.get("BE550v2", {})
+    if "EX6250" in model:
+        return {
+            "lan": [{"port": "ETH1", "label": "Gigabit Ethernet", "max_speed": "1 Gbps"}],
+            "wan": [],
+            "usb": [],
+        }
+    if "NVR" in model or any(p in (device.get("open_ports") or []) for p in [554, 8554, 8000, 37777, 8899]):
+        return {
+            "lan": [
+                {"port": "ETH1", "label": "LAN / PoE-capable", "max_speed": "1 Gbps"}
+            ],
+            "wan": [],
+            "usb": [],
+        }
+    return {}
+
+
+def _normalize_exact_mapping(topology: Dict[str, Any], goal: str = "") -> Dict[str, Any]:
+    """Build an exact cable/port mapping answer from topology and optional goal hints."""
+    devices = topology.get("devices", [])
+    links = topology.get("links", [])
+    host_ip = (topology.get("host") or {}).get("ip")
+    gateway_ip = (topology.get("host") or {}).get("gateway")
+    goal_lower = (goal or "").lower()
+
+    def _device_by_ip(ip: str) -> Dict[str, Any]:
+        for d in devices:
+            if d.get("ip") == ip:
+                return d
+        return {}
+
+    router = _device_by_ip(gateway_ip) if gateway_ip else {}
+    router_port_map = _lookup_device_port_map(router) if router else {}
+    lan_router_ports = router_port_map.get("lan", [])
+
+    lan1 = lan_router_ports[0] if lan_router_ports else {"port": "LAN1", "label": "LAN 1", "max_speed": "2.5 Gbps"}
+    lan2 = lan_router_ports[1] if len(lan_router_ports) > 1 else {"port": "LAN2", "label": "LAN 2", "max_speed": "2.5 Gbps"}
+
+    matched_link = None
+    matched_target_ip = None
+    if any(keyword in goal_lower for keyword in ["cat 6", "ethernet", "which port", "goes", "plug"]):
+        if host_ip:
+            matched_link = next((l for l in links if l.get("source") in {host_ip, gateway_ip} and l.get("target") in {host_ip, gateway_ip}), None)
+            matched_target_ip = host_ip if matched_link else None
+
+    if not matched_link and any(keyword in goal_lower for keyword in ["extender", "ex6250"]):
+        ext = next((d for d in devices if (d.get("category") or "").lower() == "extender"), None)
+        if ext:
+            matched_target_ip = ext.get("ip")
+            matched_link = next((l for l in links if l.get("source") == gateway_ip and l.get("target") == matched_target_ip), None)
+
+    if not matched_link and any(keyword in goal_lower for keyword in ["camera", "rtsp", "nvr", "cctv"]):
+        cam = next((d for d in devices if (d.get("category") or "") in {"camera", "nvr"}), None)
+        if cam:
+            matched_target_ip = cam.get("ip")
+            matched_link = next((l for l in links if l.get("source") == gateway_ip and l.get("target") == matched_target_ip), None)
+
+    target_device = _device_by_ip(matched_target_ip) if matched_target_ip else {}
+    target_port = "LAN1"
+    target_label = "Primary LAN port"
+    target_speed = "1 Gbps"
+    if target_device:
+        tp = _lookup_device_port_map(target_device)
+        target_ports = tp.get("lan", [])
+        if target_ports:
+            target_port = target_ports[0].get("port", target_port)
+            target_label = target_ports[0].get("label", target_label)
+            target_speed = target_ports[0].get("max_speed", target_speed)
+
+    cable = "Cat 6" if matched_link else "Likely Cat 6"
+    confidence = "high" if matched_link else "medium"
+    reasoning = "Exact link found in live topology mapping."
+    if confidence == "medium":
+        reasoning = "Exact topology link not found; inferring standard best-practice port path from detected router and known hardware."
+
+    return {
+        "source": {
+            "device": router.get("name") or router.get("model") or "Archer BE550",
+            "ip": gateway_ip,
+            "port": lan1.get("port", "LAN1"),
+            "label": lan1.get("label", "LAN 1"),
+            "max_speed": lan1.get("max_speed", "2.5 Gbps"),
+        },
+        "target": {
+            "device": target_device.get("name") or target_device.get("model") or (matched_target_ip or "Device"),
+            "ip": matched_target_ip,
+            "port": target_port,
+            "label": target_label,
+            "max_speed": target_speed,
+        },
+        "cable": cable,
+        "speed": f"Up to {min(_speed_to_mbps(str(lan1.get('max_speed') or '')), _speed_to_mbps(str(target_speed))) / 1000:.1f} Gbps",
+        "confidence": confidence,
+        "reasoning": reasoning,
+    }
+
+
+def _speed_to_mbps(label: str) -> int:
+    label = (label or "").lower()
+    if "10" in label and "g" in label:
+        return 10000
+    if "2.5" in label:
+        return 2500
+    if "1 g" in label or "gigabit" in label:
+        return 1000
+    if "100" in label:
+        return 100
+    return 1000
+
+
+# ----------------------------------------------------------------------
+# 3. Callable Agent Diagnostic Tools
 # ----------------------------------------------------------------------
 def tool_ping(host: str, count: int = 2) -> Dict[str, Any]:
     """Execute live latency test to host IP."""
@@ -93,6 +227,32 @@ def tool_portscan(ip: str, ports: Optional[List[int]] = None) -> Dict[str, Any]:
             open_p.append(p)
         s.close()
     return {"ip": ip, "open_ports": open_p, "scanned": ports_to_test}
+
+def tool_topology_lookup(topology: Dict[str, Any], identifier: str) -> Dict[str, Any]:
+    """Lookup a device and nearest links from live topology by IP/MAC/keyword."""
+    ident = identifier.strip().upper() if ":" in identifier else identifier.strip()
+    device = None
+    for d in topology.get("devices", []):
+        if d.get("ip") == ident or (d.get("mac") and d.get("mac").upper() == ident):
+            device = d
+            break
+    if not device:
+        lowered = ident.lower()
+        for d in topology.get("devices", []):
+            if lowered in (d.get("name") or "").lower() or lowered in (d.get("model") or "").lower():
+                device = d
+                break
+    if not device:
+        return {"found": False, "error": f"No device matching '{identifier}' found in topology."}
+
+    device_ip = device.get("ip")
+    links = [l for l in topology.get("links", []) if l.get("source") == device_ip or l.get("target") == device_ip]
+    return {
+        "found": True,
+        "device": device,
+        "links": links,
+        "message": f"Matched {device.get('name') or device.get('model')} ({device_ip}) with {len(links)} link record(s)."
+    }
 
 def tool_list_docs() -> List[Dict[str, Any]]:
     """List available documentation articles in AI Knowledge Base."""
@@ -219,6 +379,11 @@ TOOL_DEFINITIONS = [
         "name": "tool_portscan",
         "description": "Probe specific TCP ports on a network host (e.g. port 554 for RTSP camera, 8000 for NVR, 22 for SSH).",
         "parameters": {"ip": "Target IP address", "ports": "Optional list of ports to test"}
+    },
+    {
+        "name": "tool_topology_lookup",
+        "description": "Lookup a device and nearest links from live topology by IP, MAC, name, or model.",
+        "parameters": {"identifier": "IP, MAC, device name, or model keyword"}
     },
     {
         "name": "tool_wake_on_lan",
@@ -392,12 +557,28 @@ class AgentOrchestrator:
             "result": f"Loaded '{doc_result.get('filename')}' ({len(doc_result.get('content', ''))} bytes)."
         })
 
+        # Step 3b: Topology lookup for port/device-specific questions
+        if any(keyword in goal_lower for keyword in ["port", "cat 6", "ethernet", "cable", "lan1", "lan2", "lan3", "lan4", "which port"]):
+            lookup = tool_topology_lookup(topology, goal)
+            tool_results_summary["topology_lookup"] = lookup
+            trace.append({
+                "step": len(trace) + 1,
+                "agent": lead_agent["name"],
+                "icon": "🔎",
+                "thought": "Searching live topology for matching device/link to answer exact wiring/port mapping.",
+                "tool": "tool_topology_lookup",
+                "args": {"identifier": goal},
+                "result": lookup.get("message") or lookup.get("error")
+            })
+
         # Step 4: LLM or Local Synthesis with Live Diagnostic Telemetry
+        exact_mapping = _normalize_exact_mapping(topology, goal=goal)
         diagnostic_context = {
             "tool_results": tool_results_summary,
             "retrieved_docs": doc_result,
             "lead_agent": lead_agent,
-            "conversation_history": conversation_history
+            "conversation_history": conversation_history,
+            "exact_mapping": exact_mapping
         }
         solution = self.advisor.solve(goal, topology, diagnostic_context=diagnostic_context)
 
@@ -410,6 +591,7 @@ class AgentOrchestrator:
         solution["lead_agent"] = lead_agent
         solution["action_items"] = action_items
         solution["quick_followups"] = quick_followups
+        solution.setdefault("exact_mapping", exact_mapping)
 
         return solution
 
@@ -457,66 +639,52 @@ class AgentOrchestrator:
             })
 
         # 3. Bufferbloat & Latency action if latency/gaming
-        if lead_agent_id == "performance" or any(w in goal_lower for w in ["ping", "lag", "latency", "bufferbloat", "gaming", "speed"]):
+        if any(w in goal_lower for w in ["ping", "lag", "latency", "bufferbloat", "jitter", "gaming", "packet loss"]):
             actions.append({
-                "id": "act-ping-dns",
-                "label": "Benchmark Cloudflare 1.1.1.1 Jitter",
-                "icon": "⚡",
-                "type": "tool_ping",
-                "params": {"host": "1.1.1.1"}
-            })
-            actions.append({
-                "id": "act-test-bufferbloat",
-                "label": "Run Bufferbloat Benchmark Test",
+                "id": "act-bufferbloat",
+                "label": "Run Bufferbloat Benchmark",
                 "icon": "📈",
                 "type": "tool_bufferbloat",
                 "params": {"target": "1.1.1.1"}
             })
 
-        # 4. Camera RTSP test if camera topic
-        if lead_agent_id == "surveillance" or "camera" in goal_lower:
+        # 4. Camera/NVR quick actions
+        if any(w in goal_lower for w in ["camera", "nvr", "cctv", "rtsp", "onvif"]):
             cams = [d for d in topology.get("devices", []) if d.get("category") in ["camera", "nvr"]]
-            cam_ip = cams[0]["ip"] if cams else "192.168.0.136"
+            cam_ip = cams[0]["ip"] if cams else host_ip
             actions.append({
-                "id": "act-scan-rtsp",
-                "label": f"Scan Port 554 on Camera ({cam_ip})",
+                "id": "act-scan-camera-ports",
+                "label": f"Scan Camera Service Ports ({cam_ip})",
                 "icon": "📹",
                 "type": "tool_portscan",
                 "params": {"ip": cam_ip, "ports": [554, 8554, 8000, 37777, 8899]}
             })
 
-        # 5. Documentation lookup action
-        doc_topic = "be550"
-        if lead_agent_id == "surveillance": doc_topic = "cctv"
-        elif lead_agent_id == "security": doc_topic = "cgnat"
-        elif lead_agent_id == "performance": doc_topic = "gaming"
-        elif lead_agent_id == "hardware": doc_topic = "extender"
+        # 5. Router audit action
+        if any(w in goal_lower for w in ["port forward", "cgnat", "game server", "minecraft", "palworld", "host", "vpn", "tailscale", "isolate", "firewall"]):
+            actions.append({
+                "id": "act-router-audit",
+                "label": "Run Router Security Audit",
+                "icon": "🛡️",
+                "type": "tool_router_audit",
+                "params": {"gateway_url": "https://192.168.0.1", "username": "admin"}
+            })
 
-        actions.append({
-            "id": f"act-doc-{doc_topic}",
-            "label": f"Read {doc_topic.upper()} Reference Manual",
-            "icon": "📖",
-            "type": "tool_read_docs",
-            "params": {"topic": doc_topic}
-        })
+        # 6. Exact topology lookup action for wiring/port questions
+        if any(w in goal_lower for w in ["port", "cat 6", "ethernet", "cable", "lan1", "lan2", "lan3", "lan4", "which port", "goes"]):
+            actions.append({
+                "id": "act-exact-topology-lookup",
+                "label": "Lookup Exact Device Mapping",
+                "icon": "🔎",
+                "type": "tool_topology_lookup",
+                "params": {"identifier": goal}
+            })
 
         return actions
 
-    def _generate_quick_followups(
-        self,
-        lead_agent_id: str,
-        goal_lower: str,
-        topology: Dict[str, Any]
-    ) -> List[str]:
-        """Generate smart, context-aware clickable follow-up questions for the user."""
+    def _generate_quick_followups(self, lead_agent_id: str, goal_lower: str, topology: Dict[str, Any]) -> List[str]:
         followups = []
-
-        if any(w in goal_lower for w in ["wifi", "wi-fi", "coverage", "dead zone", "kitchen", "extender", "signal", "range"]):
-            followups.append("How do I configure the Netgear EX6250v2 into wired Access Point mode?")
-            followups.append("Which 2.4 GHz and 5 GHz channels have the lowest interference?")
-            followups.append("How do I enable 320 MHz MLO on the Archer BE550?")
-        elif any(w in goal_lower for w in ["camera", "nvr", "cctv", "rtsp", "surveillance", "tvpc"]):
-            followups.append("How do I isolate my cameras on the Archer BE550 IoT network?")
+        if lead_agent_id == "surveillance":
             followups.append("How do I view RTSP streams remotely without port forwarding?")
             followups.append("How do I reserve a static DHCP IP for my camera?")
         elif any(w in goal_lower for w in ["ping", "lag", "latency", "bufferbloat", "jitter", "gaming", "packet loss"]):
@@ -531,6 +699,14 @@ class AgentOrchestrator:
             followups.append("What firewall ports does Chromecast / Google Cast require?")
             followups.append("How do I disable AP isolation so phones can cast to TVs?")
             followups.append("What video encoding is best for smooth streaming over Wi-Fi?")
+        elif any(w in goal_lower for w in ["wifi", "wi-fi", "slow", "kitchen", "dead zone", "coverage", "congestion", "signal", "spectrum", "channel", "interference"]):
+            followups.append("How do I survey nearby Wi-Fi channels and spectrum?")
+            followups.append("Which Wi-Fi channel is least congested for 5 GHz and 6 GHz?")
+            followups.append("How do I enable Wi-Fi 7 MLO on my Archer BE550 for multi-gigabit backhaul?")
+        elif any(w in goal_lower for w in ["port", "cat 6", "ethernet", "cable", "lan1", "lan2", "lan3", "lan4", "which port"]):
+            followups.append("Which router LAN port should I use for my PC or NVR?")
+            followups.append("Can I run 2.5 Gbps Ethernet from my Archer BE550 to my PC?")
+            followups.append("Should I connect my Netgear EX6250v2 by Ethernet or Wi-Fi backhaul?")
         else:
             followups.append("What diagnostics can I run to test gateway packet loss?")
             followups.append("How do I reserve DHCP static IPs on the Archer BE550?")
