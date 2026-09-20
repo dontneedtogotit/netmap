@@ -185,6 +185,10 @@ async function loadInitialData() {
     updateFreshnessUI();
     await refreshProfilesList();
     await fetchRouterAuditStatus();
+
+    if (!state.topology && !state.isScanning) {
+      triggerRescan();
+    }
   } catch (err) {
     console.error("Failed to load initial data:", err);
     updateStatus("Error connecting to NetMap engine");

@@ -324,13 +324,9 @@ class NetMapHandler(http.server.SimpleHTTPRequestHandler):
         self._send_json({"success": True})
 
     def handle_get_status(self):
-        topo = STATE.get_topology()
-        if not topo:
-            topo = perform_full_network_scan()
-            STATE.update_topology(topo)
         self._send_json({
             "scanning": STATE.is_scanning,
-            "topology": topo,
+            "topology": STATE.get_topology(),
             "active_profile_id": STATE.active_profile_id,
             "viewing_profile_id": STATE.viewing_profile_id or STATE.active_profile_id
         })
@@ -345,17 +341,11 @@ class NetMapHandler(http.server.SimpleHTTPRequestHandler):
 
     def handle_get_router_settings(self):
         topo = STATE.get_topology()
-        if not topo:
-            topo = perform_full_network_scan()
-            STATE.update_topology(topo)
-        self._send_json(topo.get("router_settings", {}))
+        self._send_json((topo or {}).get("router_settings", {}))
 
     def handle_get_suggestions(self):
         topo = STATE.get_topology()
-        if not topo:
-            topo = perform_full_network_scan()
-            STATE.update_topology(topo)
-        suggestions = list(topo.get("suggestions") or generate_network_suggestions(topo))
+        suggestions = list((topo or {}).get("suggestions") or [])
         if STATE.router_audit and "findings" in STATE.router_audit:
             existing_ids = {s.get("id") for s in suggestions}
             for f in STATE.router_audit.get("findings", []):

@@ -352,9 +352,13 @@ def perform_full_network_scan(profile_id: Optional[str] = None) -> Dict[str, Any
     from netmap.profile_manager import get_or_create_profile_for_host, get_profile, save_profile
 
     host_info = get_local_host_info()
-    gateway_ip = host_info.get("gateway", "192.168.0.1")
+    gateway_ip = host_info.get("gateway") or DEFAULT_ROUTER_GATEWAY
     gateway_mac = host_info.get("gateway_mac")
-    subnet_base = ".".join(host_info.get("ip", "192.168.0.5").split(".")[:3])
+    raw_ip = host_info.get("ip")
+    if raw_ip and "." in raw_ip:
+        subnet_base = ".".join(raw_ip.split(".")[:3])
+    else:
+        subnet_base = ".".join(gateway_ip.split(".")[:3])
     
     # 0. Automatically get or create profile for active AP / network
     active_profile, is_new = get_or_create_profile_for_host(host_info)
